@@ -1,0 +1,97 @@
+# ============================================================
+# BUILD
+# ============================================================
+target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# ============================================================
+# MAVEN WRAPPER
+# ============================================================
+.mvn/wrapper/maven-wrapper.jar
+
+# ============================================================
+# IntelliJ IDEA
+# ============================================================
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# ============================================================
+# Eclipse / STS
+# ============================================================
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+
+# ============================================================
+# VS Code
+# ============================================================
+.vscode/
+
+# ============================================================
+# NetBeans
+# ============================================================
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# ============================================================
+# SISTEMA OPERACIONAL
+# ============================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Thumbs.db:encryptable
+desktop.ini
+ehthumbs.db
+
+# ============================================================
+# LOGS
+# ============================================================
+*.log
+logs/
+log/
+
+# ============================================================
+# VARIÁVEIS DE AMBIENTE E SEGREDOS
+# Nunca commitar arquivos com credenciais reais
+# Use application.yaml para configuração base sem segredos
+# ============================================================
+.env
+.env.*
+!.env.example
+application-prod.yaml
+application-prod.yml
+application-secret*.yaml
+application-secret*.yml
+application-local.yaml
+application-local.yml
+
+# ============================================================
+# TEMPORÁRIOS DE EDITORES
+# ============================================================
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+
+# ============================================================
+# DOCKER (sobrescritas locais)
+# ============================================================
+docker-compose.override.yml
