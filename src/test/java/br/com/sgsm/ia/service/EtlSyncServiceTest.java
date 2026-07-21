@@ -89,4 +89,23 @@ class EtlSyncServiceTest {
 
         assertThat(resultado.get("total")).isEqualTo(0);
     }
+
+    @Test
+    void syncAnaliticoDeveAtualizarViewEIndexarKpis() {
+        when(documentoBuilder.construirAnalitico()).thenReturn("resumo analítico");
+
+        service.syncAnalitico();
+
+        verify(jdbc).execute("REFRESH MATERIALIZED VIEW crm.mv_resumo_executivo");
+        verify(milvusIndexService).indexarAnalitico("resumo analítico");
+    }
+
+    @Test
+    void syncAnaliticoDeveContinuarQuandoOcorrerFalha() {
+        doThrow(new RuntimeException("erro db")).when(jdbc).execute(anyString());
+
+        service.syncAnalitico();
+
+        verifyNoInteractions(milvusIndexService);
+    }
 }

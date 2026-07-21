@@ -71,3 +71,7 @@ ia:
     stream-key: sgsm:events:vetorizacao
     group: sgsm-ia-group
     consumer: sgsm-ia-consumer-1
+
+crm:
+  analitico:
+    sync-interval-ms: 1800000  # 30 minutos

@@ -34,6 +34,16 @@ public class EtlSyncService {
         this.milvusIndexService = milvusIndexService;
     }
 
+    public void syncAnalitico() {
+        try {
+            jdbc.execute("REFRESH MATERIALIZED VIEW crm.mv_resumo_executivo");
+            milvusIndexService.indexarAnalitico(documentoBuilder.construirAnalitico());
+            log.info("CRM Analítico re-indexado com sucesso");
+        } catch (Exception e) {
+            log.warn("Falha no sync analítico: {}", e.getMessage());
+        }
+    }
+
     public Map<String, Object> syncTodos() {
         int total = 0, erros = 0;
         for (String tipo : TIPO_PARA_SQL.keySet()) {
