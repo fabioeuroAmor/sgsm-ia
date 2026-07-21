@@ -8,6 +8,7 @@ import dev.langchain4j.model.output.Response;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
+import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.milvus.MilvusEmbeddingStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,9 +51,24 @@ class MilvusIndexServiceTest {
 
         service.upsert("PACIENTE", "id-1", "conteudo do paciente");
 
+        verify(store).removeAll(any(Filter.class));
         verify(jdbc).update(contains("INSERT INTO crm.documento"),
                 eq("PACIENTE"), eq("id-1"), eq("sgsm.paciente"), eq("conteudo do paciente"),
                 eq("milvus-id-1"), eq("INDEXADO"));
+    }
+
+    @Test
+    void deveRemoverVetorAnteriorAntesDeReindexar() {
+        Embedding embedding = Embedding.from(new float[] {0.1f, 0.2f});
+        when(embeddingModel.embed(any(TextSegment.class))).thenReturn(Response.from(embedding));
+        when(store.add(eq(embedding), any(TextSegment.class))).thenReturn("milvus-id-2");
+
+        var inOrder = inOrder(store);
+
+        service.upsert("PACIENTE", "id-1", "conteudo atualizado");
+
+        inOrder.verify(store).removeAll(any(Filter.class));
+        inOrder.verify(store).add(eq(embedding), any(TextSegment.class));
     }
 
     @Test

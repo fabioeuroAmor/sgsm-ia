@@ -7,6 +7,8 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import dev.langchain4j.store.embedding.filter.Filter;
+import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder;
 import dev.langchain4j.store.embedding.milvus.MilvusEmbeddingStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,9 +38,11 @@ public class MilvusIndexService {
         this.iaProps = iaProps;
     }
 
-    // Upsert: remove entrada anterior e insere o novo vetor
+    // Upsert: remove entrada(s) anterior(es) com o mesmo (tipo, referencia_id) e insere o novo vetor
     public void upsert(String tipo, String referenciaId, String conteudo) {
         try {
+            removerVetorAnterior(tipo, referenciaId);
+
             TextSegment segmento = TextSegment.from(conteudo,
                     Metadata.from(Map.of("tipo", tipo, "referencia_id", referenciaId)));
 
@@ -57,6 +61,8 @@ public class MilvusIndexService {
     // Indexa resumo analítico diretamente no Milvus (sem crm.documento — dado global, não por entidade)
     public void indexarAnalitico(String texto) {
         try {
+            removerVetorAnterior("ANALITICO", "resumo-analitico");
+
             TextSegment segmento = TextSegment.from(texto,
                     Metadata.from(Map.of("tipo", "ANALITICO", "referencia_id", "resumo-analitico")));
             Embedding embedding = embeddingModel.embed(segmento).content();
@@ -65,6 +71,14 @@ public class MilvusIndexService {
         } catch (Exception e) {
             log.warn("Falha ao indexar resumo analítico: {}", e.getMessage());
         }
+    }
+
+    // Remove por metadata (tipo + referencia_id) todos os vetores indexados anteriormente para essa entidade,
+    // evitando acúmulo de versões obsoletas no Milvus a cada reindexação (ETL, consumer ou scheduler)
+    private void removerVetorAnterior(String tipo, String referenciaId) {
+        Filter filtro = MetadataFilterBuilder.metadataKey("tipo").isEqualTo(tipo)
+                .and(MetadataFilterBuilder.metadataKey("referencia_id").isEqualTo(referenciaId));
+        store.removeAll(filtro);
     }
 
     // Busca semântica top-K
