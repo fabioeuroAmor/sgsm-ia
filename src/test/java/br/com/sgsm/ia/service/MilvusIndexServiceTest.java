@@ -1,6 +1,7 @@
 package br.com.sgsm.ia.service;
 
 import br.com.sgsm.ia.config.IaProperties;
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -13,11 +14,13 @@ import dev.langchain4j.store.embedding.milvus.MilvusEmbeddingStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -98,5 +101,39 @@ class MilvusIndexServiceTest {
 
         assertThat(resultado).hasSize(1);
         assertThat(resultado.get(0).embedded().text()).isEqualTo("resultado");
+    }
+
+    @Test
+    void naoDeveAplicarFiltroQuandoTipoNaoInformado() {
+        Embedding queryEmbedding = Embedding.from(new float[] {0.3f, 0.4f});
+        when(embeddingModel.embed(anyString())).thenReturn(Response.from(queryEmbedding));
+        when(store.search(any(EmbeddingSearchRequest.class)))
+                .thenReturn(new EmbeddingSearchResult<>(List.of()));
+
+        service.buscar("pergunta qualquer");
+
+        var captor = ArgumentCaptor.forClass(EmbeddingSearchRequest.class);
+        verify(store).search(captor.capture());
+        assertThat(captor.getValue().filter()).isNull();
+    }
+
+    @Test
+    void deveAplicarFiltroDeTipoNaBuscaQuandoInformado() {
+        Embedding queryEmbedding = Embedding.from(new float[] {0.3f, 0.4f});
+        when(embeddingModel.embed(anyString())).thenReturn(Response.from(queryEmbedding));
+        when(store.search(any(EmbeddingSearchRequest.class)))
+                .thenReturn(new EmbeddingSearchResult<>(List.of()));
+
+        service.buscar("qual foi o faturamento?", "analitico");
+
+        var captor = ArgumentCaptor.forClass(EmbeddingSearchRequest.class);
+        verify(store).search(captor.capture());
+        Filter filtro = captor.getValue().filter();
+
+        assertThat(filtro).isNotNull();
+        assertThat(filtro.test(Metadata.from(Map.of("tipo", "ANALITICO", "referencia_id", "resumo-analitico"))))
+                .isTrue();
+        assertThat(filtro.test(Metadata.from(Map.of("tipo", "PACIENTE", "referencia_id", "1"))))
+                .isFalse();
     }
 }

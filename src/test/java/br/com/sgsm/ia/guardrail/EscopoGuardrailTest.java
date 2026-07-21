@@ -32,4 +32,25 @@ class EscopoGuardrailTest {
 
         assertThat(resultado.isSuccess()).isTrue();
     }
+
+    @Test
+    void deveAceitarPerguntaFinanceiraDoCrmAnalitico() {
+        var resultado = guardrail.validate(UserMessage.from("Qual foi o faturamento do mês?"));
+
+        assertThat(resultado.isSuccess()).isTrue();
+    }
+
+    @Test
+    void deveAceitarPerguntaSobreTaxaDeConversao() {
+        var resultado = guardrail.validate(UserMessage.from("Qual a taxa de conversão dos leads?"));
+
+        assertThat(resultado.isSuccess()).isTrue();
+    }
+
+    @Test
+    void deveAceitarPerguntaSobreChurn() {
+        var resultado = guardrail.validate(UserMessage.from("Quem está em risco de churn este mês?"));
+
+        assertThat(resultado.isSuccess()).isTrue();
+    }
 }

@@ -81,14 +81,23 @@ public class MilvusIndexService {
         store.removeAll(filtro);
     }
 
-    // Busca semântica top-K
+    // Busca semântica top-K em todos os tipos de documento
     public List<EmbeddingMatch<TextSegment>> buscar(String pergunta) {
+        return buscar(pergunta, null);
+    }
+
+    // Busca semântica top-K restrita a um tipo de documento (filtro aplicado no próprio Milvus,
+    // para que o tipo pedido não seja excluído por concorrer com outros tipos no top-K geral)
+    public List<EmbeddingMatch<TextSegment>> buscar(String pergunta, String tipo) {
         Embedding queryEmbedding = embeddingModel.embed(pergunta).content();
-        return store.search(EmbeddingSearchRequest.builder()
+        var request = EmbeddingSearchRequest.builder()
                 .queryEmbedding(queryEmbedding)
                 .maxResults(iaProps.topK())
-                .minScore(0.5)
-                .build()).matches();
+                .minScore(0.5);
+        if (tipo != null && !tipo.isBlank()) {
+            request.filter(MetadataFilterBuilder.metadataKey("tipo").isEqualTo(tipo.toUpperCase()));
+        }
+        return store.search(request.build()).matches();
     }
 
     private void atualizarStatusDocumento(String tipo, String referenciaId,

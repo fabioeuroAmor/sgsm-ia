@@ -13,7 +13,12 @@ public class EscopoGuardrail implements InputGuardrail {
             "pagamento", "servico", "serviço", "clinica", "clínica",
             "especialidade", "cancelamento", "horario", "horário",
             "historico", "histórico", "atendimento", "reembolso",
-            "estabelecimento", "nota", "prontuario", "prontuário"
+            "estabelecimento", "nota", "prontuario", "prontuário",
+            // CRM Analítico / KPIs (resumo executivo indexado no Milvus)
+            "receita", "faturamento", "kpi", "ticket medio", "ticket médio",
+            "taxa de conversao", "taxa de conversão", "conversao", "conversão",
+            "churn", "no-show", "no show", "ocupacao", "ocupação",
+            "funil", "lead", "crm"
     );
 
     @Override

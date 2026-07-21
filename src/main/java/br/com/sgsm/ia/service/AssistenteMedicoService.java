@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 public class AssistenteMedicoService {
@@ -47,11 +48,15 @@ public class AssistenteMedicoService {
             return inputResult.failureMessage();
         }
 
-        // Camada 2: Busca semântica no Milvus
+        // Camada 2: Busca semântica no Milvus — top-K geral + busca dedicada do resumo
+        // analítico (tipo=ANALITICO), que senão concorreria em desvantagem no top-K geral
+        // contra o volume muito maior de documentos de pacientes/médicos/agendamentos
         List<EmbeddingMatch<TextSegment>> matches = milvusIndexService.buscar(pergunta);
+        List<EmbeddingMatch<TextSegment>> resumoAnalitico = milvusIndexService.buscar(pergunta, "ANALITICO");
 
-        String contexto = matches.stream()
+        String contexto = Stream.concat(matches.stream(), resumoAnalitico.stream())
                 .map(m -> m.embedded().text())
+                .distinct()
                 .collect(Collectors.joining("\n---\n"));
 
         // Camada 3: Montagem do prompt com contexto isolado

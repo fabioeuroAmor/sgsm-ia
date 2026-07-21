@@ -51,11 +51,9 @@ public class IaController {
             @RequestParam String q,
             @RequestParam(required = false) String tipo) {
 
-        var matches = milvusIndexService.buscar(q);
+        var matches = milvusIndexService.buscar(q, tipo);
 
         var documentos = matches.stream()
-                .filter(m -> tipo == null || tipo.equalsIgnoreCase(
-                        m.embedded().metadata().getString("tipo")))
                 .map(m -> new BuscaResponse.DocumentoDto(
                         m.embedded().metadata().getString("tipo"),
                         m.embedded().metadata().getString("referencia_id"),
