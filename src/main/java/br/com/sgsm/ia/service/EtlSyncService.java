@@ -18,7 +18,8 @@ public class EtlSyncService {
             "MEDICO",          "SELECT id::text FROM sgsm.medico WHERE ativo = true",
             "ESTABELECIMENTO", "SELECT id::text FROM sgsm.estabelecimento WHERE ativo = true",
             "SERVICO_MEDICO",  "SELECT id::text FROM sgsm.servico_medico WHERE ativo = true",
-            "AGENDAMENTO",     "SELECT id::text FROM sgsm.agendamento"
+            "AGENDAMENTO",     "SELECT id::text FROM sgsm.agendamento",
+            "LEAD",            "SELECT id::text FROM crm.lead"
     );
 
     private final JdbcTemplate jdbc;
@@ -45,6 +46,12 @@ public class EtlSyncService {
             jdbc.execute("REFRESH MATERIALIZED VIEW crm.mv_resumo_executivo");
         } catch (Exception e) {
             log.warn("Falha ao atualizar mv_resumo_executivo: {}", e.getMessage());
+        }
+        // Indexa resumo analítico (KPIs) no Milvus para RAG
+        try {
+            milvusIndexService.indexarAnalitico(documentoBuilder.construirAnalitico());
+        } catch (Exception e) {
+            log.warn("Falha ao indexar resumo analítico: {}", e.getMessage());
         }
         return Map.of("total", total, "erros", erros);
     }

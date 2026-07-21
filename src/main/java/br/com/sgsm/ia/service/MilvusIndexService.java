@@ -54,6 +54,19 @@ public class MilvusIndexService {
         }
     }
 
+    // Indexa resumo analítico diretamente no Milvus (sem crm.documento — dado global, não por entidade)
+    public void indexarAnalitico(String texto) {
+        try {
+            TextSegment segmento = TextSegment.from(texto,
+                    Metadata.from(Map.of("tipo", "ANALITICO", "referencia_id", "resumo-analitico")));
+            Embedding embedding = embeddingModel.embed(segmento).content();
+            store.add(embedding, segmento);
+            log.info("Resumo analítico (KPI) indexado no Milvus");
+        } catch (Exception e) {
+            log.warn("Falha ao indexar resumo analítico: {}", e.getMessage());
+        }
+    }
+
     // Busca semântica top-K
     public List<EmbeddingMatch<TextSegment>> buscar(String pergunta) {
         Embedding queryEmbedding = embeddingModel.embed(pergunta).content();

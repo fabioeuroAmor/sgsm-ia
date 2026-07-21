@@ -23,10 +23,33 @@ public class CrmService {
 
     private final JdbcTemplate jdbc;
     private final ContextoSeguranca contexto;
+    private final DocumentoBuilder documentoBuilder;
+    private final MilvusIndexService milvusIndexService;
 
-    public CrmService(JdbcTemplate jdbc, ContextoSeguranca contexto) {
+    public CrmService(JdbcTemplate jdbc,
+                      ContextoSeguranca contexto,
+                      DocumentoBuilder documentoBuilder,
+                      MilvusIndexService milvusIndexService) {
         this.jdbc = jdbc;
         this.contexto = contexto;
+        this.documentoBuilder = documentoBuilder;
+        this.milvusIndexService = milvusIndexService;
+    }
+
+    private void reindexarPaciente(String pacienteId) {
+        try {
+            milvusIndexService.upsert("PACIENTE", pacienteId, documentoBuilder.construir("PACIENTE", pacienteId));
+        } catch (Exception e) {
+            log.warn("Falha ao reindexar paciente id={}: {}", pacienteId, e.getMessage());
+        }
+    }
+
+    private void indexarLead(String leadId) {
+        try {
+            milvusIndexService.upsert("LEAD", leadId, documentoBuilder.construir("LEAD", leadId));
+        } catch (Exception e) {
+            log.warn("Falha ao indexar lead id={}: {}", leadId, e.getMessage());
+        }
     }
 
     // ── LEADS ─────────────────────────────────────────────────────────────────
@@ -62,6 +85,7 @@ public class CrmService {
                 """,
                 id, req.nome(), req.email(), req.telefone(), req.interesse(),
                 origemVal, usuarioId, req.observacoes());
+        indexarLead(id);
         return Map.of("id", id, "status", "NOVO");
     }
 
@@ -73,6 +97,7 @@ public class CrmService {
                 WHERE id = ?::uuid
                 """,
                 req.status().toUpperCase(), req.observacoes(), id);
+        indexarLead(id);
     }
 
     // ── TAGS ──────────────────────────────────────────────────────────────────
@@ -94,10 +119,16 @@ public class CrmService {
                 ON CONFLICT (paciente_id, tag) DO NOTHING
                 """,
                 pacienteId, req.tag().toLowerCase().trim(), usuarioId);
+        reindexarPaciente(pacienteId);
     }
 
     public void removerTag(String tagId) {
+        var rows = jdbc.queryForList(
+                "SELECT paciente_id::text FROM crm.tag_paciente WHERE id = ?::uuid", tagId);
         jdbc.update("DELETE FROM crm.tag_paciente WHERE id = ?::uuid", tagId);
+        if (!rows.isEmpty()) {
+            reindexarPaciente((String) rows.get(0).get("paciente_id"));
+        }
     }
 
     // ── CONTATOS ──────────────────────────────────────────────────────────────
@@ -121,6 +152,7 @@ public class CrmService {
                 """,
                 pacienteId, req.tipo().toUpperCase(), req.direcao().toUpperCase(),
                 req.descricao(), req.duracaoSegundos(), usuarioId);
+        reindexarPaciente(pacienteId);
     }
 
     // ── NOTAS CLÍNICAS ────────────────────────────────────────────────────────
@@ -146,6 +178,7 @@ public class CrmService {
                 VALUES (gen_random_uuid(), ?::uuid, ?::uuid, ?::uuid, ?::crm.tipo_nota, ?)
                 """,
                 agendId, pacienteId, medicoId, req.tipo().toUpperCase(), req.conteudo());
+        reindexarPaciente(pacienteId);
     }
 
     // ── PACIENTE 360 ──────────────────────────────────────────────────────────
@@ -153,7 +186,7 @@ public class CrmService {
     public Map<String, Object> paciente360(String pacienteId) {
         try {
             List<Map<String, Object>> rows = jdbc.queryForList(
-                    "SELECT * FROM crm.v_paciente_360 WHERE id = ?::uuid", pacienteId);
+                    "SELECT * FROM crm.v_paciente_360 WHERE paciente_id = ?::uuid", pacienteId);
             return rows.isEmpty() ? Map.of() : rows.get(0);
         } catch (Exception e) {
             log.warn("Falha ao consultar v_paciente_360 para pacienteId={}: {}", pacienteId, e.getMessage());

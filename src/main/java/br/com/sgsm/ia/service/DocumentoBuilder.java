@@ -22,6 +22,7 @@ public class DocumentoBuilder {
             case "SERVICO_MEDICO"   -> construirServico(id);
             case "AGENDAMENTO"      -> construirAgendamento(id);
             case "REEMBOLSO"        -> construirReembolso(id);
+            case "LEAD"             -> construirLead(id);
             default -> "Entidade: " + tipo + " id=" + id;
         };
     }
@@ -38,7 +39,7 @@ public class DocumentoBuilder {
             WHERE p.id = ?::uuid
             GROUP BY p.id, p.nome, p.cpf, p.data_nascimento, p.email
             """;
-        return jdbc.query(sql, rs -> {
+        String textoBase = jdbc.query(sql, rs -> {
             if (!rs.next()) return "Paciente não encontrado: " + id;
             return "Paciente: %s. Email: %s. CPF: %s. Data nascimento: %s. Consultas concluídas: %d. LTV total: R$ %.2f. Último agendamento: %s."
                     .formatted(
@@ -51,6 +52,73 @@ public class DocumentoBuilder {
                             rs.getObject("ultimo_agendamento")
                     );
         }, id);
+
+        // Enriquecimento com dados CRM Operacional
+        var tags = jdbc.queryForList(
+                "SELECT tag FROM crm.tag_paciente WHERE paciente_id = ?::uuid ORDER BY criado_em DESC LIMIT 10",
+                String.class, id);
+        var contatos = jdbc.queryForList("""
+                SELECT tipo || ' ' || direcao || ': ' || LEFT(descricao, 120) AS resumo
+                FROM crm.contato_paciente
+                WHERE paciente_id = ?::uuid ORDER BY criado_em DESC LIMIT 3
+                """, String.class, id);
+        var notas = jdbc.queryForList("""
+                SELECT tipo || ': ' || LEFT(conteudo, 200) AS resumo
+                FROM crm.nota_clinica
+                WHERE paciente_id = ?::uuid ORDER BY criado_em DESC LIMIT 3
+                """, String.class, id);
+
+        var sb = new StringBuilder(textoBase);
+        if (!tags.isEmpty())     sb.append(" Tags CRM: ").append(String.join(", ", tags)).append(".");
+        if (!contatos.isEmpty()) sb.append(" Contatos recentes: ").append(String.join(". ", contatos)).append(".");
+        if (!notas.isEmpty())    sb.append(" Notas clínicas: ").append(String.join(". ", notas)).append(".");
+        return sb.toString();
+    }
+
+    private String construirLead(String id) {
+        var sql = """
+            SELECT nome, email, telefone, interesse,
+                   origem::text, status::text, observacoes, criado_em
+            FROM crm.lead WHERE id = ?::uuid
+            """;
+        return jdbc.query(sql, rs -> {
+            if (!rs.next()) return "Lead não encontrado: " + id;
+            return "Lead CRM: %s. Email: %s. Telefone: %s. Interesse: %s. Origem: %s. Status: %s. Observações: %s. Criado em: %s."
+                    .formatted(
+                            rs.getString("nome"),
+                            rs.getString("email"),
+                            rs.getString("telefone"),
+                            rs.getString("interesse"),
+                            rs.getString("origem"),
+                            rs.getString("status"),
+                            rs.getString("observacoes"),
+                            rs.getObject("criado_em")
+                    );
+        }, id);
+    }
+
+    public String construirAnalitico() {
+        var rows = jdbc.queryForList("SELECT * FROM crm.mv_resumo_executivo LIMIT 1");
+        if (rows.isEmpty()) return "Resumo analítico: sem dados disponíveis no momento.";
+        var r = rows.get(0);
+        return ("Resumo analítico do sistema de gestão médica. " +
+                "Total de agendamentos: %s. Concluídos: %s. Cancelados: %s. No-shows: %s. " +
+                "Taxa de conversão: %s%%. Receita total: R$ %s. Ticket médio: R$ %s. " +
+                "Total de pacientes cadastrados: %s. Novos pacientes nos últimos 30 dias: %s. " +
+                "Médicos ativos: %s. Dados atualizados em: %s.")
+                .formatted(
+                        r.getOrDefault("total_agendamentos", 0),
+                        r.getOrDefault("concluidos", 0),
+                        r.getOrDefault("cancelados", 0),
+                        r.getOrDefault("no_shows", 0),
+                        r.getOrDefault("taxa_conversao_pct", 0),
+                        r.getOrDefault("receita_total", 0),
+                        r.getOrDefault("ticket_medio_geral", 0),
+                        r.getOrDefault("total_pacientes", 0),
+                        r.getOrDefault("novos_pacientes_30d", 0),
+                        r.getOrDefault("medicos_ativos", 0),
+                        r.getOrDefault("atualizado_em", "desconhecido")
+                );
     }
 
     private String construirMedico(String id) {

@@ -6,6 +6,8 @@ import br.com.sgsm.ia.dto.LeadRequest;
 import br.com.sgsm.ia.dto.NotaClinicaRequest;
 import br.com.sgsm.ia.dto.TagRequest;
 import br.com.sgsm.ia.security.ContextoSeguranca;
+import br.com.sgsm.ia.service.DocumentoBuilder;
+import br.com.sgsm.ia.service.MilvusIndexService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,11 +31,17 @@ class CrmServiceTest {
     @Mock
     private ContextoSeguranca contexto;
 
+    @Mock
+    private DocumentoBuilder documentoBuilder;
+
+    @Mock
+    private MilvusIndexService milvusIndexService;
+
     private CrmService crmService;
 
     @BeforeEach
     void setUp() {
-        crmService = new CrmService(jdbc, contexto);
+        crmService = new CrmService(jdbc, contexto, documentoBuilder, milvusIndexService);
     }
 
     // ── listarLeads ───────────────────────────────────────────────────────────
@@ -150,6 +158,7 @@ class CrmServiceTest {
 
     @Test
     void removerTagDeveExecutarDeleteNoBanco() {
+        when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of());
         when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
 
         crmService.removerTag("tag-uuid");
