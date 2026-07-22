@@ -14,10 +14,11 @@ public class EscopoGuardrail implements InputGuardrail {
             "especialidade", "cancelamento", "horario", "horário",
             "historico", "histórico", "atendimento", "reembolso",
             "estabelecimento", "nota", "prontuario", "prontuário",
-            // CRM Analítico / KPIs (resumo executivo indexado no Milvus)
-            "receita", "faturamento", "kpi", "ticket medio", "ticket médio",
-            "taxa de conversao", "taxa de conversão", "conversao", "conversão",
-            "churn", "no-show", "no show", "ocupacao", "ocupação",
+            // CRM Analítico / KPIs (resumo executivo indexado no Milvus).
+            // Radicais (ex.: "fatur", "convers") em vez da palavra completa, para cobrir
+            // variações verbais naturais ("faturou", "converteu") e não só o substantivo.
+            "receita", "fatur", "kpi", "ticket medio", "ticket médio",
+            "convers", "churn", "no-show", "no show", "ocupacao", "ocupação",
             "funil", "lead", "crm"
     );
 

@@ -53,4 +53,11 @@ class EscopoGuardrailTest {
 
         assertThat(resultado.isSuccess()).isTrue();
     }
+
+    @Test
+    void deveAceitarPerguntaComVerboFaturar() {
+        var resultado = guardrail.validate(UserMessage.from("Quanto o Dr. Fabio Amorim faturou?"));
+
+        assertThat(resultado.isSuccess()).isTrue();
+    }
 }
