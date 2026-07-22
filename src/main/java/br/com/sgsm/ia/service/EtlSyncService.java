@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 @Service
 public class EtlSyncService {
@@ -37,10 +38,25 @@ public class EtlSyncService {
     public void syncAnalitico() {
         try {
             jdbc.execute("REFRESH MATERIALIZED VIEW crm.mv_resumo_executivo");
-            milvusIndexService.indexarAnalitico(documentoBuilder.construirAnalitico());
-            log.info("CRM Analítico re-indexado com sucesso");
         } catch (Exception e) {
-            log.warn("Falha no sync analítico: {}", e.getMessage());
+            log.warn("Falha ao atualizar mv_resumo_executivo: {}", e.getMessage());
+        }
+        // Cada view de KPI é indexada isoladamente para que a falha de uma não impeça as demais
+        indexarAnaliticoSeguro("resumo-analitico", documentoBuilder::construirAnalitico);
+        indexarAnaliticoSeguro("faturamento-mensal", documentoBuilder::construirFaturamentoMensal);
+        indexarAnaliticoSeguro("ocupacao-agenda", documentoBuilder::construirOcupacaoAgenda);
+        indexarAnaliticoSeguro("alto-valor", documentoBuilder::construirAltoValor);
+        indexarAnaliticoSeguro("churn-risco", documentoBuilder::construirChurnRisco);
+        indexarAnaliticoSeguro("funil-medico", documentoBuilder::construirFunilMedico);
+        indexarAnaliticoSeguro("cancelamentos", documentoBuilder::construirCancelamentos);
+        log.info("CRM Analítico re-indexado com sucesso");
+    }
+
+    private void indexarAnaliticoSeguro(String referenciaId, Supplier<String> construtor) {
+        try {
+            milvusIndexService.indexarAnalitico(referenciaId, construtor.get());
+        } catch (Exception e) {
+            log.warn("Falha ao indexar documento analítico '{}': {}", referenciaId, e.getMessage());
         }
     }
 
@@ -51,18 +67,7 @@ public class EtlSyncService {
             total += (int) resultado.get("total");
             erros += (int) resultado.get("erros");
         }
-        // Atualiza materialized view após sync completo
-        try {
-            jdbc.execute("REFRESH MATERIALIZED VIEW crm.mv_resumo_executivo");
-        } catch (Exception e) {
-            log.warn("Falha ao atualizar mv_resumo_executivo: {}", e.getMessage());
-        }
-        // Indexa resumo analítico (KPIs) no Milvus para RAG
-        try {
-            milvusIndexService.indexarAnalitico(documentoBuilder.construirAnalitico());
-        } catch (Exception e) {
-            log.warn("Falha ao indexar resumo analítico: {}", e.getMessage());
-        }
+        syncAnalitico();
         return Map.of("total", total, "erros", erros);
     }
 

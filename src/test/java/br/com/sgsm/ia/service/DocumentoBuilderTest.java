@@ -23,12 +23,14 @@ class DocumentoBuilderTest {
 
     @Mock
     private JdbcTemplate jdbc;
+    @Mock
+    private KpiService kpiService;
 
     private DocumentoBuilder documentoBuilder;
 
     @BeforeEach
     void setUp() {
-        documentoBuilder = new DocumentoBuilder(jdbc);
+        documentoBuilder = new DocumentoBuilder(jdbc, kpiService);
     }
 
     @SuppressWarnings("unchecked")
@@ -187,6 +189,30 @@ class DocumentoBuilderTest {
 
         assertThat(texto).isEqualTo("Entidade: OUTRO_TIPO id=id-7");
         verifyNoInteractions(jdbc);
+    }
+
+    @Test
+    void deveConstruirFaturamentoMensalComDadosDoKpiService() {
+        when(kpiService.faturamentoMensal()).thenReturn(java.util.List.of(
+                Map.of("mes", "2026-06", "total", 1000),
+                Map.of("mes", "2026-05", "total", 2000)
+        ));
+
+        String texto = documentoBuilder.construirFaturamentoMensal();
+
+        assertThat(texto)
+                .startsWith("Faturamento mensal do sistema de gestão médica.")
+                .contains("mes: 2026-06")
+                .contains("total: 1000");
+    }
+
+    @Test
+    void deveConstruirChurnRiscoVazioQuandoNaoHaDados() {
+        when(kpiService.churnRisco()).thenReturn(java.util.List.of());
+
+        String texto = documentoBuilder.construirChurnRisco();
+
+        assertThat(texto).isEqualTo("Pacientes com risco de churn (sem consulta há mais de 90 dias): sem dados disponíveis no momento.");
     }
 
     @Test

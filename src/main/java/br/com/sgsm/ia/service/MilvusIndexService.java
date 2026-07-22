@@ -58,18 +58,19 @@ public class MilvusIndexService {
         }
     }
 
-    // Indexa resumo analítico diretamente no Milvus (sem crm.documento — dado global, não por entidade)
-    public void indexarAnalitico(String texto) {
+    // Indexa um documento analítico (resumo executivo ou uma das views de KPI) diretamente no
+    // Milvus (sem crm.documento — dado agregado/global, não ligado a uma entidade específica)
+    public void indexarAnalitico(String referenciaId, String texto) {
         try {
-            removerVetorAnterior("ANALITICO", "resumo-analitico");
+            removerVetorAnterior("ANALITICO", referenciaId);
 
             TextSegment segmento = TextSegment.from(texto,
-                    Metadata.from(Map.of("tipo", "ANALITICO", "referencia_id", "resumo-analitico")));
+                    Metadata.from(Map.of("tipo", "ANALITICO", "referencia_id", referenciaId)));
             Embedding embedding = embeddingModel.embed(segmento).content();
             store.add(embedding, segmento);
-            log.info("Resumo analítico (KPI) indexado no Milvus");
+            log.info("Documento analítico '{}' indexado no Milvus", referenciaId);
         } catch (Exception e) {
-            log.warn("Falha ao indexar resumo analítico: {}", e.getMessage());
+            log.warn("Falha ao indexar documento analítico '{}': {}", referenciaId, e.getMessage());
         }
     }
 
