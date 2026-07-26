@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -135,5 +136,42 @@ class MilvusIndexServiceTest {
                 .isTrue();
         assertThat(filtro.test(Metadata.from(Map.of("tipo", "PACIENTE", "referencia_id", "1"))))
                 .isFalse();
+    }
+
+    @Test
+    void naoDeveAplicarFiltroQuandoTipoEmBranco() {
+        Embedding queryEmbedding = Embedding.from(new float[] {0.3f, 0.4f});
+        when(embeddingModel.embed(anyString())).thenReturn(Response.from(queryEmbedding));
+        when(store.search(any(EmbeddingSearchRequest.class)))
+                .thenReturn(new EmbeddingSearchResult<>(List.of()));
+
+        service.buscar("pergunta qualquer", "   ");
+
+        var captor = ArgumentCaptor.forClass(EmbeddingSearchRequest.class);
+        verify(store).search(captor.capture());
+        assertThat(captor.getValue().filter()).isNull();
+    }
+
+    @Test
+    void deveIndexarDocumentoAnaliticoComSucesso() {
+        Embedding embedding = Embedding.from(new float[] {0.5f, 0.6f});
+        when(embeddingModel.embed(any(TextSegment.class))).thenReturn(Response.from(embedding));
+        when(store.add(eq(embedding), any(TextSegment.class))).thenReturn("milvus-id-analitico");
+
+        service.indexarAnalitico("resumo-analitico", "Resumo analítico do sistema.");
+
+        verify(store).removeAll(any(Filter.class));
+        verify(store).add(eq(embedding), any(TextSegment.class));
+        verifyNoInteractions(jdbc);
+    }
+
+    @Test
+    void deveApenasLogarAvisoQuandoFalhaAoIndexarDocumentoAnalitico() {
+        Embedding embedding = Embedding.from(new float[] {0.5f, 0.6f});
+        when(embeddingModel.embed(any(TextSegment.class))).thenReturn(Response.from(embedding));
+        when(store.add(eq(embedding), any(TextSegment.class))).thenThrow(new RuntimeException("falha milvus"));
+
+        assertThatCode(() -> service.indexarAnalitico("faturamento-mensal", "Faturamento mensal."))
+                .doesNotThrowAnyException();
     }
 }
