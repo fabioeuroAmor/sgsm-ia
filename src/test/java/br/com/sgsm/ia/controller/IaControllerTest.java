@@ -55,21 +55,20 @@ class IaControllerTest {
     void deveFiltrarBuscaPorTipo() {
         var matchPaciente = new EmbeddingMatch<>(0.9, "id1", null,
                 TextSegment.from("texto paciente", Metadata.from(Map.of("tipo", "PACIENTE", "referencia_id", "1"))));
-        var matchMedico = new EmbeddingMatch<>(0.8, "id2", null,
-                TextSegment.from("texto medico", Metadata.from(Map.of("tipo", "MEDICO", "referencia_id", "2"))));
-        when(milvusIndexService.buscar("consulta")).thenReturn(List.of(matchPaciente, matchMedico));
+        when(milvusIndexService.buscar("consulta", "PACIENTE")).thenReturn(List.of(matchPaciente));
 
         var response = controller.busca("consulta", "PACIENTE");
 
         assertThat(response.getBody().documentos()).hasSize(1);
         assertThat(response.getBody().documentos().get(0).tipo()).isEqualTo("PACIENTE");
+        verify(milvusIndexService, never()).buscar(anyString());
     }
 
     @Test
     void deveRetornarTodosOsDocumentosQuandoTipoNaoInformado() {
         var matchPaciente = new EmbeddingMatch<>(0.9, "id1", null,
                 TextSegment.from("texto paciente", Metadata.from(Map.of("tipo", "PACIENTE", "referencia_id", "1"))));
-        when(milvusIndexService.buscar("consulta")).thenReturn(List.of(matchPaciente));
+        when(milvusIndexService.buscar("consulta", null)).thenReturn(List.of(matchPaciente));
 
         var response = controller.busca("consulta", null);
 

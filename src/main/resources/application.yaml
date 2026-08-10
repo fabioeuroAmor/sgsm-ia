@@ -75,3 +75,7 @@ ia:
 crm:
   analitico:
     sync-interval-ms: 1800000  # 30 minutos
+
+logging:
+  level:
+    br.com.sgsm.ia.service.AssistenteMedicoService: DEBUG

@@ -23,12 +23,14 @@ class DocumentoBuilderTest {
 
     @Mock
     private JdbcTemplate jdbc;
+    @Mock
+    private KpiService kpiService;
 
     private DocumentoBuilder documentoBuilder;
 
     @BeforeEach
     void setUp() {
-        documentoBuilder = new DocumentoBuilder(jdbc);
+        documentoBuilder = new DocumentoBuilder(jdbc, kpiService);
     }
 
     @SuppressWarnings("unchecked")
@@ -95,6 +97,32 @@ class DocumentoBuilderTest {
         String texto = documentoBuilder.construir("PACIENTE", "id-inexistente");
 
         assertThat(texto).isEqualTo("Paciente não encontrado: id-inexistente");
+    }
+
+    @Test
+    void deveEnriquecerPacienteComTagsContatosENotasQuandoExistem() throws SQLException {
+        stubQueryComResultado(Map.of(
+                "nome", "João da Silva",
+                "email", "joao@email.com",
+                "cpf", "12345678900",
+                "data_nascimento", LocalDate.of(1990, 1, 1),
+                "consultas", 5L,
+                "ltv", 450.0,
+                "ultimo_agendamento", LocalDateTime.of(2026, 6, 1, 10, 0)
+        ));
+        when(jdbc.queryForList(contains("crm.tag_paciente"), eq(String.class), eq("id-1")))
+                .thenReturn(java.util.List.of("vip", "diabetico"));
+        when(jdbc.queryForList(contains("crm.contato_paciente"), eq(String.class), eq("id-1")))
+                .thenReturn(java.util.List.of("LIGACAO SAIDA: confirmação de consulta"));
+        when(jdbc.queryForList(contains("crm.nota_clinica"), eq(String.class), eq("id-1")))
+                .thenReturn(java.util.List.of("EVOLUCAO: paciente estável"));
+
+        String texto = documentoBuilder.construir("PACIENTE", "id-1");
+
+        assertThat(texto)
+                .contains("Tags CRM: vip, diabetico.")
+                .contains("Contatos recentes: LIGACAO SAIDA: confirmação de consulta.")
+                .contains("Notas clínicas: EVOLUCAO: paciente estável.");
     }
 
     @Test
@@ -182,11 +210,152 @@ class DocumentoBuilderTest {
     }
 
     @Test
+    void deveConstruirDocumentoDeLead() throws SQLException {
+        stubQueryComResultado(Map.of(
+                "nome", "Zilma Ruela",
+                "email", "zilma@gmail.com",
+                "telefone", "6199999999",
+                "interesse", "Cardiologia",
+                "origem", "SITE",
+                "status", "NOVO",
+                "observacoes", "Contatar pela manhã",
+                "criado_em", LocalDateTime.of(2026, 7, 1, 8, 0)
+        ));
+
+        String texto = documentoBuilder.construir("LEAD", "id-lead-1");
+
+        assertThat(texto)
+                .contains("Lead CRM: Zilma Ruela")
+                .contains("Origem: SITE")
+                .contains("Status: NOVO");
+    }
+
+    @Test
+    void deveRetornarMensagemQuandoLeadNaoEncontrado() throws SQLException {
+        stubQuerySemResultado();
+
+        String texto = documentoBuilder.construir("LEAD", "id-inexistente");
+
+        assertThat(texto).isEqualTo("Lead não encontrado: id-inexistente");
+    }
+
+    @Test
+    void deveConstruirAnaliticoComDados() {
+        when(jdbc.queryForList("SELECT * FROM crm.mv_resumo_executivo LIMIT 1")).thenReturn(java.util.List.of(
+                Map.ofEntries(
+                        Map.entry("total_agendamentos", 10),
+                        Map.entry("concluidos", 8),
+                        Map.entry("cancelados", 1),
+                        Map.entry("no_shows", 1),
+                        Map.entry("taxa_conversao_pct", 80),
+                        Map.entry("receita_total", 5000),
+                        Map.entry("ticket_medio_geral", 250),
+                        Map.entry("total_pacientes", 4),
+                        Map.entry("novos_pacientes_30d", 2),
+                        Map.entry("medicos_ativos", 1),
+                        Map.entry("atualizado_em", "2026-07-21")
+                )
+        ));
+
+        String texto = documentoBuilder.construirAnalitico();
+
+        assertThat(texto)
+                .startsWith("Resumo analítico do sistema de gestão médica.")
+                .contains("Total de agendamentos: 10")
+                .contains("Receita total: R$ 5000");
+    }
+
+    @Test
+    void deveConstruirAnaliticoSemDados() {
+        when(jdbc.queryForList("SELECT * FROM crm.mv_resumo_executivo LIMIT 1")).thenReturn(java.util.List.of());
+
+        String texto = documentoBuilder.construirAnalitico();
+
+        assertThat(texto).isEqualTo("Resumo analítico: sem dados disponíveis no momento.");
+    }
+
+    @Test
+    void deveConstruirOcupacaoAgendaComDadosDoKpiService() {
+        when(kpiService.ocupacaoAgenda()).thenReturn(java.util.List.of(
+                Map.of("medico_nome", "Dra. Maria", "ocupacao_pct", 75)
+        ));
+
+        String texto = documentoBuilder.construirOcupacaoAgenda();
+
+        assertThat(texto)
+                .startsWith("Ocupação de agenda dos médicos.")
+                .contains("medico_nome: Dra. Maria");
+    }
+
+    @Test
+    void deveConstruirAltoValorComDadosDoKpiService() {
+        when(kpiService.pacientesAltoValor()).thenReturn(java.util.List.of(
+                Map.of("nome", "João da Silva", "ltv", 5000)
+        ));
+
+        String texto = documentoBuilder.construirAltoValor();
+
+        assertThat(texto)
+                .startsWith("Pacientes de alto valor (maior LTV).")
+                .contains("ltv: 5000");
+    }
+
+    @Test
+    void deveConstruirFunilMedicoComDadosDoKpiService() {
+        when(kpiService.funilMedico()).thenReturn(java.util.List.of(
+                Map.of("medico_nome", "Dra. Maria", "conversao_pct", 60)
+        ));
+
+        String texto = documentoBuilder.construirFunilMedico();
+
+        assertThat(texto)
+                .startsWith("Funil de conversão por médico.")
+                .contains("conversao_pct: 60");
+    }
+
+    @Test
+    void deveConstruirCancelamentosComDadosDoKpiService() {
+        when(kpiService.cancelamentos()).thenReturn(java.util.List.of(
+                Map.of("mes", "2026-06", "total_cancelamentos", 3)
+        ));
+
+        String texto = documentoBuilder.construirCancelamentos();
+
+        assertThat(texto)
+                .startsWith("Histórico de cancelamentos.")
+                .contains("total_cancelamentos: 3");
+    }
+
+    @Test
     void deveRetornarTextoGenericoParaTipoDesconhecido() {
         String texto = documentoBuilder.construir("OUTRO_TIPO", "id-7");
 
         assertThat(texto).isEqualTo("Entidade: OUTRO_TIPO id=id-7");
         verifyNoInteractions(jdbc);
+    }
+
+    @Test
+    void deveConstruirFaturamentoMensalComDadosDoKpiService() {
+        when(kpiService.faturamentoMensal()).thenReturn(java.util.List.of(
+                Map.of("mes", "2026-06", "total", 1000),
+                Map.of("mes", "2026-05", "total", 2000)
+        ));
+
+        String texto = documentoBuilder.construirFaturamentoMensal();
+
+        assertThat(texto)
+                .startsWith("Faturamento mensal do sistema de gestão médica.")
+                .contains("mes: 2026-06")
+                .contains("total: 1000");
+    }
+
+    @Test
+    void deveConstruirChurnRiscoVazioQuandoNaoHaDados() {
+        when(kpiService.churnRisco()).thenReturn(java.util.List.of());
+
+        String texto = documentoBuilder.construirChurnRisco();
+
+        assertThat(texto).isEqualTo("Pacientes com risco de churn (sem consulta há mais de 90 dias): sem dados disponíveis no momento.");
     }
 
     @Test

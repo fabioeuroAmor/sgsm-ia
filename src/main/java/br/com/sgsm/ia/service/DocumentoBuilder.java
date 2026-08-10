@@ -3,15 +3,20 @@ package br.com.sgsm.ia.service;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class DocumentoBuilder {
 
     private final JdbcTemplate jdbc;
+    private final KpiService kpiService;
 
-    public DocumentoBuilder(JdbcTemplate jdbc) {
+    public DocumentoBuilder(JdbcTemplate jdbc, KpiService kpiService) {
         this.jdbc = jdbc;
+        this.kpiService = kpiService;
     }
 
     public String construir(String tipo, String id) {
@@ -119,6 +124,44 @@ public class DocumentoBuilder {
                         r.getOrDefault("medicos_ativos", 0),
                         r.getOrDefault("atualizado_em", "desconhecido")
                 );
+    }
+
+    // Views de KPI do schema crm que alimentam o /ia/kpis — vetorizadas aqui também
+    // para que o assistente (RAG) consiga responder sobre elas, não só o resumo executivo
+    public String construirFaturamentoMensal() {
+        return construirDeLista("Faturamento mensal do sistema de gestão médica", kpiService.faturamentoMensal());
+    }
+
+    public String construirOcupacaoAgenda() {
+        return construirDeLista("Ocupação de agenda dos médicos", kpiService.ocupacaoAgenda());
+    }
+
+    public String construirAltoValor() {
+        return construirDeLista("Pacientes de alto valor (maior LTV)", kpiService.pacientesAltoValor());
+    }
+
+    public String construirChurnRisco() {
+        return construirDeLista("Pacientes com risco de churn (sem consulta há mais de 90 dias)", kpiService.churnRisco());
+    }
+
+    public String construirFunilMedico() {
+        return construirDeLista("Funil de conversão por médico", kpiService.funilMedico());
+    }
+
+    public String construirCancelamentos() {
+        return construirDeLista("Histórico de cancelamentos", kpiService.cancelamentos());
+    }
+
+    private String construirDeLista(String titulo, List<Map<String, Object>> linhas) {
+        if (linhas.isEmpty()) {
+            return titulo + ": sem dados disponíveis no momento.";
+        }
+        String corpo = linhas.stream()
+                .map(linha -> linha.entrySet().stream()
+                        .map(e -> e.getKey() + ": " + e.getValue())
+                        .collect(Collectors.joining(", ")))
+                .collect(Collectors.joining("; "));
+        return titulo + ". " + corpo + ".";
     }
 
     private String construirMedico(String id) {

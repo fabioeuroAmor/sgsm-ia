@@ -91,21 +91,51 @@ class EtlSyncServiceTest {
     }
 
     @Test
-    void syncAnaliticoDeveAtualizarViewEIndexarKpis() {
+    void syncAnaliticoDeveAtualizarViewEIndexarTodosOsDocumentosAnaliticos() {
         when(documentoBuilder.construirAnalitico()).thenReturn("resumo analítico");
+        when(documentoBuilder.construirFaturamentoMensal()).thenReturn("faturamento mensal");
+        when(documentoBuilder.construirOcupacaoAgenda()).thenReturn("ocupação agenda");
+        when(documentoBuilder.construirAltoValor()).thenReturn("alto valor");
+        when(documentoBuilder.construirChurnRisco()).thenReturn("churn risco");
+        when(documentoBuilder.construirFunilMedico()).thenReturn("funil médico");
+        when(documentoBuilder.construirCancelamentos()).thenReturn("cancelamentos");
 
         service.syncAnalitico();
 
         verify(jdbc).execute("REFRESH MATERIALIZED VIEW crm.mv_resumo_executivo");
-        verify(milvusIndexService).indexarAnalitico("resumo analítico");
+        verify(milvusIndexService).indexarAnalitico("resumo-analitico", "resumo analítico");
+        verify(milvusIndexService).indexarAnalitico("faturamento-mensal", "faturamento mensal");
+        verify(milvusIndexService).indexarAnalitico("ocupacao-agenda", "ocupação agenda");
+        verify(milvusIndexService).indexarAnalitico("alto-valor", "alto valor");
+        verify(milvusIndexService).indexarAnalitico("churn-risco", "churn risco");
+        verify(milvusIndexService).indexarAnalitico("funil-medico", "funil médico");
+        verify(milvusIndexService).indexarAnalitico("cancelamentos", "cancelamentos");
     }
 
     @Test
-    void syncAnaliticoDeveContinuarQuandoOcorrerFalha() {
-        doThrow(new RuntimeException("erro db")).when(jdbc).execute(anyString());
+    void syncAnaliticoDeveContinuarIndexandoDemaisDocumentosQuandoUmFalha() {
+        when(documentoBuilder.construirAnalitico()).thenThrow(new RuntimeException("falha resumo"));
+        when(documentoBuilder.construirFaturamentoMensal()).thenReturn("faturamento mensal");
+        when(documentoBuilder.construirOcupacaoAgenda()).thenReturn("ocupação agenda");
+        when(documentoBuilder.construirAltoValor()).thenReturn("alto valor");
+        when(documentoBuilder.construirChurnRisco()).thenReturn("churn risco");
+        when(documentoBuilder.construirFunilMedico()).thenReturn("funil médico");
+        when(documentoBuilder.construirCancelamentos()).thenReturn("cancelamentos");
 
         service.syncAnalitico();
 
-        verifyNoInteractions(milvusIndexService);
+        verify(milvusIndexService, never()).indexarAnalitico(eq("resumo-analitico"), anyString());
+        verify(milvusIndexService).indexarAnalitico("faturamento-mensal", "faturamento mensal");
+        verify(milvusIndexService).indexarAnalitico("cancelamentos", "cancelamentos");
+    }
+
+    @Test
+    void syncAnaliticoDeveContinuarQuandoFalhaAtualizarView() {
+        doThrow(new RuntimeException("erro db")).when(jdbc).execute(anyString());
+        when(documentoBuilder.construirAnalitico()).thenReturn("resumo analítico");
+
+        service.syncAnalitico();
+
+        verify(milvusIndexService).indexarAnalitico(eq("resumo-analitico"), anyString());
     }
 }

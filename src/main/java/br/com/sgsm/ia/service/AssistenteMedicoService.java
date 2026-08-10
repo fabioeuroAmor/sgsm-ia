@@ -7,14 +7,19 @@ import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.input.Prompt;
 import dev.langchain4j.model.input.PromptTemplate;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 public class AssistenteMedicoService {
+
+    private static final Logger log = LoggerFactory.getLogger(AssistenteMedicoService.class);
 
     private static final String SYSTEM_PROMPT = """
             Você é um assistente médico do sistema SGSM.
@@ -47,18 +52,24 @@ public class AssistenteMedicoService {
             return inputResult.failureMessage();
         }
 
-        // Camada 2: Busca semântica no Milvus
+        // Camada 2: Busca semântica no Milvus — top-K geral + busca dedicada do resumo
+        // analítico (tipo=ANALITICO), que senão concorreria em desvantagem no top-K geral
+        // contra o volume muito maior de documentos de pacientes/médicos/agendamentos
         List<EmbeddingMatch<TextSegment>> matches = milvusIndexService.buscar(pergunta);
+        List<EmbeddingMatch<TextSegment>> resumoAnalitico = milvusIndexService.buscar(pergunta, "ANALITICO");
 
-        String contexto = matches.stream()
+        String contexto = Stream.concat(matches.stream(), resumoAnalitico.stream())
                 .map(m -> m.embedded().text())
+                .distinct()
                 .collect(Collectors.joining("\n---\n"));
 
         // Camada 3: Montagem do prompt com contexto isolado
         String promptTexto = SYSTEM_PROMPT + "\n\nCONTEXTO:\n" + contexto + "\n\nPERGUNTA: " + pergunta;
 
         // Camada 4: Chamada ao LLM
+        log.debug("Prompt enviado ao LLM (pergunta='{}'):\n{}", pergunta, promptTexto);
         String resposta = chatModel.generate(promptTexto);
+        log.debug("Resposta bruta do LLM: {}", resposta);
 
         // Camada 5: OutputGuardrail — sanitização
         var outputResult = sanitizacaoGuardrail.validate(
