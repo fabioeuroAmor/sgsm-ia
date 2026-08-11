@@ -1,0 +1,49 @@
+spring:
+  datasource:
+    url: ${DATASOURCE_URL}
+    username: ${DATASOURCE_USERNAME}
+    password: ${DATASOURCE_PASSWORD}
+    hikari:
+      connectionTimeout: 20000
+      maximumPoolSize: 10
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: sgsm
+    ddl-auto: none
+    show-sql: false
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+
+milvus:
+  host: ${MILVUS_HOST}
+  port: ${MILVUS_PORT:19530}
+
+jwt:
+  secret: ${JWT_SECRET}
+
+ia:
+  provider: ollama
+
+langchain4j:
+  ollama:
+    chat-model:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model-name: ${OLLAMA_CHAT_MODEL:deepseek-r1:8b}
+      temperature: 0.5
+      max-tokens: 300
+      timeout: 300000
+      log-requests: false
+      log-responses: false
+    embedding-model:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model-name: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
+      timeout: 60000
+
+logging:
+  level:
+    root: INFO
+    br.com.sgsm.ia: INFO
