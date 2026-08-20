@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -122,6 +123,17 @@ class CrmServiceTest {
         assertThat(resultado).containsKey("id");
     }
 
+    @Test
+    void criarLeadDeveContinuarSemLancarExcecaoQuandoIndexacaoFalha() {
+        when(contexto.getUsuarioId()).thenReturn("usuario-uuid");
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+        doThrow(new RuntimeException("falha milvus"))
+                .when(milvusIndexService).upsert(eq("LEAD"), anyString(), any());
+
+        var req = new LeadRequest("Ana", "ana@email.com", null, null, "SITE", null);
+        assertThatCode(() -> crmService.criarLead(req)).doesNotThrowAnyException();
+    }
+
     // ── atualizarStatusLead ───────────────────────────────────────────────────
 
     @Test
@@ -164,6 +176,28 @@ class CrmServiceTest {
         crmService.removerTag("tag-uuid");
 
         verify(jdbc).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    void removerTagDeveReindexarPacienteQuandoTagExistir() {
+        when(jdbc.queryForList(anyString(), any(Object[].class)))
+                .thenReturn(List.of(Map.of("paciente_id", "paciente-uuid")));
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        crmService.removerTag("tag-uuid");
+
+        verify(milvusIndexService).upsert(eq("PACIENTE"), eq("paciente-uuid"), any());
+    }
+
+    @Test
+    void adicionarTagDeveContinuarSemLancarExcecaoQuandoReindexacaoFalha() {
+        when(contexto.getUsuarioId()).thenReturn("usuario-uuid");
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+        doThrow(new RuntimeException("falha milvus"))
+                .when(milvusIndexService).upsert(anyString(), anyString(), any());
+
+        assertThatCode(() -> crmService.adicionarTag("paciente-uuid", new TagRequest("Hipertenso")))
+                .doesNotThrowAnyException();
     }
 
     // ── contatos ──────────────────────────────────────────────────────────────
