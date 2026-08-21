@@ -195,24 +195,25 @@ public class DocumentoBuilder {
 
     private String construirEstabelecimento(String id) {
         var sql = """
-            SELECT e.nome, e.cnpj, e.cidade, e.uf, e.telefone,
+            SELECT e.nome, e.cnpj, e.cidade, e.uf, e.telefone, e.ativo,
                    STRING_AGG(DISTINCT m.nome, ', ') AS medicos
             FROM sgsm.estabelecimento e
             LEFT JOIN sgsm.medico_estabelecimento me ON me.estabelecimento_id = e.id AND me.ativo=true
             LEFT JOIN sgsm.medico m ON m.id = me.medico_id
             WHERE e.id = ?::uuid
-            GROUP BY e.id, e.nome, e.cnpj, e.cidade, e.uf, e.telefone
+            GROUP BY e.id, e.nome, e.cnpj, e.cidade, e.uf, e.telefone, e.ativo
             """;
         return jdbc.query(sql, rs -> {
             if (!rs.next()) return "Estabelecimento não encontrado: " + id;
-            return "Estabelecimento: %s. CNPJ: %s. Cidade: %s/%s. Telefone: %s. Médicos: %s."
+            return "Estabelecimento: %s. CNPJ: %s. Cidade: %s/%s. Telefone: %s. Médicos: %s. Status: %s."
                     .formatted(
                             rs.getString("nome"),
                             rs.getString("cnpj"),
                             rs.getString("cidade"),
                             rs.getString("uf"),
                             rs.getString("telefone"),
-                            rs.getString("medicos")
+                            rs.getString("medicos"),
+                            rs.getBoolean("ativo") ? "Ativo" : "INATIVO (não recomendar nem agendar neste estabelecimento)"
                     );
         }, id);
     }

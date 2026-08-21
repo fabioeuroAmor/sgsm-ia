@@ -196,7 +196,24 @@ class DocumentoBuilderTest {
 
         String texto = documentoBuilder.construir("ESTABELECIMENTO", "id-3");
 
-        assertThat(texto).contains("Clínica Central").contains("São Paulo").contains("Dra. Maria");
+        assertThat(texto).contains("Clínica Central").contains("São Paulo").contains("Dra. Maria").contains("Status: Ativo");
+    }
+
+    @Test
+    void deveMarcarEstabelecimentoInativoNoTexto() throws SQLException {
+        stubQueryComResultado(Map.of(
+                "nome", "Clínica Central",
+                "cnpj", "00.000.000/0001-00",
+                "cidade", "São Paulo",
+                "uf", "SP",
+                "telefone", "(11) 99999-9999",
+                "medicos", "Dra. Maria, Dr. João",
+                "ativo", false
+        ));
+
+        String texto = documentoBuilder.construir("ESTABELECIMENTO", "id-3");
+
+        assertThat(texto).contains("Status: INATIVO").contains("não recomendar");
     }
 
     @Test
