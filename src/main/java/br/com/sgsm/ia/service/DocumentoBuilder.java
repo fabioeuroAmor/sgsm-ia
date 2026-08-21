@@ -34,7 +34,7 @@ public class DocumentoBuilder {
 
     private String construirPaciente(String id) {
         var sql = """
-            SELECT p.nome, p.cpf, p.data_nascimento, p.email,
+            SELECT p.nome, p.cpf, p.data_nascimento, p.email, p.ativo,
                    COUNT(a.id) FILTER (WHERE a.status='CONCLUIDO') AS consultas,
                    COALESCE(SUM(pg.valor) FILTER (WHERE pg.status='APROVADO'), 0) AS ltv,
                    MAX(a.data_hora_inicio) FILTER (WHERE a.status='CONCLUIDO') AS ultimo_agendamento
@@ -42,11 +42,11 @@ public class DocumentoBuilder {
             LEFT JOIN sgsm.agendamento a  ON a.paciente_id = p.id
             LEFT JOIN sgsm.pagamento pg   ON pg.paciente_id = p.id
             WHERE p.id = ?::uuid
-            GROUP BY p.id, p.nome, p.cpf, p.data_nascimento, p.email
+            GROUP BY p.id, p.nome, p.cpf, p.data_nascimento, p.email, p.ativo
             """;
         String textoBase = jdbc.query(sql, rs -> {
             if (!rs.next()) return "Paciente não encontrado: " + id;
-            return "Paciente: %s. Email: %s. CPF: %s. Data nascimento: %s. Consultas concluídas: %d. LTV total: R$ %.2f. Último agendamento: %s."
+            return "Paciente: %s. Email: %s. CPF: %s. Data nascimento: %s. Consultas concluídas: %d. LTV total: R$ %.2f. Último agendamento: %s. Status: %s."
                     .formatted(
                             rs.getString("nome"),
                             rs.getString("email"),
@@ -54,7 +54,8 @@ public class DocumentoBuilder {
                             rs.getObject("data_nascimento"),
                             rs.getLong("consultas"),
                             rs.getDouble("ltv"),
-                            rs.getObject("ultimo_agendamento")
+                            rs.getObject("ultimo_agendamento"),
+                            rs.getBoolean("ativo") ? "Ativo" : "INATIVO (cadastro inativado — não considerar como paciente corrente)"
                     );
         }, id);
 
@@ -166,7 +167,7 @@ public class DocumentoBuilder {
 
     private String construirMedico(String id) {
         var sql = """
-            SELECT m.nome, m.crm, m.crm_uf, m.especialidade, m.email,
+            SELECT m.nome, m.crm, m.crm_uf, m.especialidade, m.email, m.ativo,
                    STRING_AGG(DISTINCT s.nome, ', ') AS servicos,
                    STRING_AGG(DISTINCT e.nome, ', ') AS estabelecimentos
             FROM sgsm.medico m
@@ -174,11 +175,11 @@ public class DocumentoBuilder {
             LEFT JOIN sgsm.medico_estabelecimento me ON me.medico_id = m.id AND me.ativo=true
             LEFT JOIN sgsm.estabelecimento e ON e.id = me.estabelecimento_id
             WHERE m.id = ?::uuid
-            GROUP BY m.id, m.nome, m.crm, m.crm_uf, m.especialidade, m.email
+            GROUP BY m.id, m.nome, m.crm, m.crm_uf, m.especialidade, m.email, m.ativo
             """;
         return jdbc.query(sql, rs -> {
             if (!rs.next()) return "Médico não encontrado: " + id;
-            return "Médico: %s. CRM: %s/%s. Especialidade: %s. Email: %s. Serviços: %s. Estabelecimentos: %s."
+            return "Médico: %s. CRM: %s/%s. Especialidade: %s. Email: %s. Serviços: %s. Estabelecimentos: %s. Status: %s."
                     .formatted(
                             rs.getString("nome"),
                             rs.getString("crm"),
@@ -186,7 +187,8 @@ public class DocumentoBuilder {
                             rs.getString("especialidade"),
                             rs.getString("email"),
                             rs.getString("servicos"),
-                            rs.getString("estabelecimentos")
+                            rs.getString("estabelecimentos"),
+                            rs.getBoolean("ativo") ? "Ativo" : "INATIVO (não recomendar nem agendar consultas com este médico)"
                     );
         }, id);
     }
@@ -217,21 +219,22 @@ public class DocumentoBuilder {
 
     private String construirServico(String id) {
         var sql = """
-            SELECT s.nome, s.descricao, s.valor, s.duracao_minutos, m.nome AS medico, m.especialidade
+            SELECT s.nome, s.descricao, s.valor, s.duracao_minutos, s.ativo, m.nome AS medico, m.especialidade
             FROM sgsm.servico_medico s
             JOIN sgsm.medico m ON m.id = s.medico_id
             WHERE s.id = ?::uuid
             """;
         return jdbc.query(sql, rs -> {
             if (!rs.next()) return "Serviço não encontrado: " + id;
-            return "Serviço médico: %s. Médico: %s (%s). Descrição: %s. Valor: R$ %.2f. Duração: %d min."
+            return "Serviço médico: %s. Médico: %s (%s). Descrição: %s. Valor: R$ %.2f. Duração: %d min. Status: %s."
                     .formatted(
                             rs.getString("nome"),
                             rs.getString("medico"),
                             rs.getString("especialidade"),
                             rs.getString("descricao"),
                             rs.getDouble("valor"),
-                            rs.getInt("duracao_minutos")
+                            rs.getInt("duracao_minutos"),
+                            rs.getBoolean("ativo") ? "Ativo" : "INATIVO (não oferecer nem agendar este serviço)"
                     );
         }, id);
     }

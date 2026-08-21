@@ -51,6 +51,10 @@ class DocumentoBuilderTest {
             Object v = valores.get((String) inv.getArgument(0));
             return v == null ? 0 : ((Number) v).intValue();
         });
+        lenient().when(rs.getBoolean(anyString())).thenAnswer(inv -> {
+            Object v = valores.get((String) inv.getArgument(0));
+            return v == null ? true : (Boolean) v;
+        });
 
         when(jdbc.query(anyString(), any(ResultSetExtractor.class), any()))
                 .thenAnswer(invocation -> {
@@ -87,7 +91,26 @@ class DocumentoBuilderTest {
                 .contains("João da Silva")
                 .contains("joao@email.com")
                 .contains("Consultas concluídas: 5")
-                .contains("LTV total: R$ 450");
+                .contains("LTV total: R$ 450")
+                .contains("Status: Ativo");
+    }
+
+    @Test
+    void deveMarcarPacienteInativoNoTexto() throws SQLException {
+        stubQueryComResultado(Map.of(
+                "nome", "João da Silva",
+                "email", "joao@email.com",
+                "cpf", "12345678900",
+                "data_nascimento", LocalDate.of(1990, 1, 1),
+                "consultas", 5L,
+                "ltv", 450.0,
+                "ultimo_agendamento", LocalDateTime.of(2026, 6, 1, 10, 0),
+                "ativo", false
+        ));
+
+        String texto = documentoBuilder.construir("PACIENTE", "id-1");
+
+        assertThat(texto).contains("Status: INATIVO");
     }
 
     @Test
@@ -139,7 +162,25 @@ class DocumentoBuilderTest {
 
         String texto = documentoBuilder.construir("MEDICO", "id-2");
 
-        assertThat(texto).contains("Dra. Maria").contains("Cardiologia").contains("Clínica Central");
+        assertThat(texto).contains("Dra. Maria").contains("Cardiologia").contains("Clínica Central").contains("Status: Ativo");
+    }
+
+    @Test
+    void deveMarcarMedicoInativoNoTexto() throws SQLException {
+        stubQueryComResultado(Map.of(
+                "nome", "Dra. Maria",
+                "crm", "12345",
+                "crm_uf", "SP",
+                "especialidade", "Cardiologia",
+                "email", "maria@email.com",
+                "servicos", "Consulta, Retorno",
+                "estabelecimentos", "Clínica Central",
+                "ativo", false
+        ));
+
+        String texto = documentoBuilder.construir("MEDICO", "id-2");
+
+        assertThat(texto).contains("Status: INATIVO").contains("não recomendar");
     }
 
     @Test
@@ -171,7 +212,24 @@ class DocumentoBuilderTest {
 
         String texto = documentoBuilder.construir("SERVICO_MEDICO", "id-4");
 
-        assertThat(texto).contains("Consulta cardiológica").contains("R$ 250").contains("30 min");
+        assertThat(texto).contains("Consulta cardiológica").contains("R$ 250").contains("30 min").contains("Status: Ativo");
+    }
+
+    @Test
+    void deveMarcarServicoInativoNoTexto() throws SQLException {
+        stubQueryComResultado(Map.of(
+                "nome", "Consulta cardiológica",
+                "descricao", "Avaliação completa",
+                "valor", 250.0,
+                "duracao_minutos", 30,
+                "medico", "Dra. Maria",
+                "especialidade", "Cardiologia",
+                "ativo", false
+        ));
+
+        String texto = documentoBuilder.construir("SERVICO_MEDICO", "id-4");
+
+        assertThat(texto).contains("Status: INATIVO").contains("não oferecer");
     }
 
     @Test
