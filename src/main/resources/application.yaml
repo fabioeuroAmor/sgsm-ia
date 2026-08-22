@@ -4,68 +4,17 @@ spring:
   mvc:
     problemdetails:
       enabled: true
-  datasource:
-    url: jdbc:postgresql://localhost:5432/postgres?stringtype=unspecified
-    username: postgres
-    password: postgres
-    hikari:
-      connectionTimeout: 20000
-      maximumPoolSize: 5
-  jpa:
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-        default_schema: sgsm
-    ddl-auto: none
-    show-sql: false
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
 
 server:
-  port: 8082
-
-jwt:
-  secret: ${JWT_SECRET:sgsm-chave-desenvolvimento-local-minimo-256-bits-nao-usar-em-producao}
+  port: ${SERVER_PORT:8082}
 
 milvus:
-  host: ${MILVUS_HOST:localhost}
-  port: ${MILVUS_PORT:19530}
   collection: sgsm_documentos
-  # nomic-embed-text produz vetores de 768 dimensões
   embedding-dimension: ${MILVUS_EMBEDDING_DIM:768}
 
-# --- OpenAI (comentado - substituído por Ollama local gratuito) ---
-#langchain4j:
-#  open-ai:
-#    chat-model:
-#      api-key: ${OPENAI_API_KEY:demo}
-#      model-name: ${OPENAI_CHAT_MODEL:gpt-4o-mini}
-#      temperature: 0.2
-#    embedding-model:
-#      api-key: ${OPENAI_API_KEY:demo}
-#      model-name: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
-
-# --- USAR OLLAMA LOCAL (TOTALMENTE GRATUITO - SEM INTERNET) ---
-# USANDO langchain4j ollama ao mesmo tempo e de graça
-langchain4j:
-  ollama:
-    chat-model:
-      base-url: http://localhost:11434
-      model-name: deepseek-r1:8b  # Baixe com: ollama run deepseek-r1:8b
-      temperature: 0.7
-      max-tokens: 300
-      timeout: 300000
-      log-requests: true
-      log-responses: true
-    embedding-model:
-      base-url: http://localhost:11434
-      model-name: nomic-embed-text  # Baixe com: ollama pull nomic-embed-text
-      timeout: 60000
-
 ia:
-  provider: ${IA_PROVIDER:openai}
   top-k: 10
   redis:
     stream-key: sgsm:events:vetorizacao
@@ -74,8 +23,4 @@ ia:
 
 crm:
   analitico:
-    sync-interval-ms: 1800000  # 30 minutos
-
-logging:
-  level:
-    br.com.sgsm.ia.service.AssistenteMedicoService: DEBUG
+    sync-interval-ms: 1800000

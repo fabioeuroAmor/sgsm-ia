@@ -1,0 +1,49 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/postgres?stringtype=unspecified
+    username: postgres
+    password: postgres
+    hikari:
+      connectionTimeout: 20000
+      maximumPoolSize: 5
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: sgsm
+    ddl-auto: none
+    show-sql: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+milvus:
+  host: localhost
+  port: 19530
+
+jwt:
+  secret: sgsm-chave-desenvolvimento-local-minimo-256-bits-nao-usar-em-producao
+
+ia:
+  provider: ollama
+
+langchain4j:
+  ollama:
+    chat-model:
+      base-url: http://localhost:11434
+      model-name: gpt-oss:120b-cloud
+      temperature: 0.3
+      max-tokens: 400
+      timeout: 40000
+      log-requests: false
+      log-responses: false
+    embedding-model:
+      base-url: http://localhost:11434
+      model-name: nomic-embed-text
+      timeout: 60000
+
+logging:
+  level:
+    br.com.sgsm.ia: DEBUG
+    br.com.sgsm.ia.service.AssistenteMedicoService: DEBUG
