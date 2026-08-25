@@ -57,7 +57,7 @@ class WhatsAppServiceTest {
                 "{\"intent\":\"AGENDAR\",\"entidades\":{\"especialidade\":\"Cardiologia\",\"medicoId\":\"med-1\"},"
                         + "\"respostaUsuario\":\"Vou agendar com o Dr. João.\",\"requerConfirmacao\":true,\"dadosFaltantes\":[]}");
 
-        var request = new WhatsAppClassificarRequest("Quero marcar com o Dr. João", null, null, null);
+        var request = new WhatsAppClassificarRequest("Quero marcar com o Dr. João", null, "PACIENTE", null);
         var resposta = service.classificar(request);
 
         assertThat(resposta.getIntent()).isEqualTo(IntentWhatsApp.AGENDAR);
@@ -133,7 +133,9 @@ class WhatsAppServiceTest {
 
         var promptCaptor = ArgumentCaptor.forClass(String.class);
         verify(chatModel).generate(promptCaptor.capture());
-        assertThat(promptCaptor.getValue()).contains("PERFIL DO USUÁRIO: NÃO IDENTIFICADO");
+        assertThat(promptCaptor.getValue())
+                .contains("PERFIL DO USUÁRIO: NÃO IDENTIFICADO")
+                .contains("REGRA DE AUTENTICAÇÃO");
     }
 
     @Test
@@ -152,6 +154,44 @@ class WhatsAppServiceTest {
     }
 
     @Test
+    void devePedirIdentificacaoQuandoAgendarSemPerfilMesmoSeLlmNaoPedir() {
+        semDocumentosNoMilvus();
+        when(chatModel.generate(anyString())).thenReturn(
+                "{\"intent\":\"AGENDAR\",\"entidades\":{},\"respostaUsuario\":\"Vou agendar sua consulta.\","
+                        + "\"requerConfirmacao\":true,\"dadosFaltantes\":[]}");
+
+        var resposta = service.classificar(new WhatsAppClassificarRequest("quero marcar uma consulta", null, null, null));
+
+        assertThat(resposta.getRespostaUsuario())
+                .isEqualTo("Para agendar, primeiro preciso confirmar sua identidade. Digite seu e-mail cadastrado.");
+    }
+
+    @Test
+    void devePedirIdentificacaoQuandoCancelarSemPerfilMesmoSeLlmNaoPedir() {
+        semDocumentosNoMilvus();
+        when(chatModel.generate(anyString())).thenReturn(
+                "{\"intent\":\"CANCELAR\",\"entidades\":{},\"respostaUsuario\":\"Vou cancelar sua consulta.\","
+                        + "\"requerConfirmacao\":true,\"dadosFaltantes\":[]}");
+
+        var resposta = service.classificar(new WhatsAppClassificarRequest("quero cancelar minha consulta", null, null, null));
+
+        assertThat(resposta.getRespostaUsuario())
+                .isEqualTo("Para cancelar, primeiro preciso confirmar sua identidade. Digite seu e-mail cadastrado.");
+    }
+
+    @Test
+    void naoDeveSobrescreverRespostaQuandoAgendarComPerfilIdentificado() {
+        semDocumentosNoMilvus();
+        when(chatModel.generate(anyString())).thenReturn(
+                "{\"intent\":\"AGENDAR\",\"entidades\":{},\"respostaUsuario\":\"Vou agendar sua consulta.\","
+                        + "\"requerConfirmacao\":true,\"dadosFaltantes\":[]}");
+
+        var resposta = service.classificar(new WhatsAppClassificarRequest("quero marcar uma consulta", null, "PACIENTE", null));
+
+        assertThat(resposta.getRespostaUsuario()).isEqualTo("Vou agendar sua consulta.");
+    }
+
+    @Test
     void deveSanitizarCpfNaRespostaDoLlm() {
         semDocumentosNoMilvus();
         when(chatModel.generate(anyString())).thenReturn(
@@ -161,6 +201,32 @@ class WhatsAppServiceTest {
         var resposta = service.classificar(new WhatsAppClassificarRequest("qual meu cpf", null, null, null));
 
         assertThat(resposta.getRespostaUsuario()).isEqualTo("Seu CPF cadastrado é ***.***.***-**");
+    }
+
+    @Test
+    void naoDeveMascararCpfNemEmailDentroDasEntidadesExtraidas() {
+        semDocumentosNoMilvus();
+        when(chatModel.generate(anyString())).thenReturn(
+                "{\"intent\":\"CADASTRAR\",\"entidades\":{\"cpf\":\"123.456.789-00\",\"email\":\"joao12345678901@teste.com\"},"
+                        + "\"respostaUsuario\":\"Confirma o cadastro?\",\"requerConfirmacao\":true,\"dadosFaltantes\":[]}");
+
+        var resposta = service.classificar(new WhatsAppClassificarRequest("me cadastra", null, null, null));
+
+        assertThat(resposta.getEntidades().getCpf()).isEqualTo("123.456.789-00");
+        assertThat(resposta.getEntidades().getEmail()).isEqualTo("joao12345678901@teste.com");
+    }
+
+    @Test
+    void deveMascararCpfNaRespostaUsuarioMasNaoNasEntidadesQuandoAmbosPresentes() {
+        semDocumentosNoMilvus();
+        when(chatModel.generate(anyString())).thenReturn(
+                "{\"intent\":\"CADASTRAR\",\"entidades\":{\"cpf\":\"123.456.789-00\"},"
+                        + "\"respostaUsuario\":\"Confirma o CPF 123.456.789-00?\",\"requerConfirmacao\":true,\"dadosFaltantes\":[]}");
+
+        var resposta = service.classificar(new WhatsAppClassificarRequest("me cadastra", null, null, null));
+
+        assertThat(resposta.getRespostaUsuario()).isEqualTo("Confirma o CPF ***.***.***-**?");
+        assertThat(resposta.getEntidades().getCpf()).isEqualTo("123.456.789-00");
     }
 
     @Test
