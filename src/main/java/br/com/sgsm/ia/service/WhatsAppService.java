@@ -76,6 +76,11 @@ public class WhatsAppService {
             - Se o CONTEXTO contém dados de médico mencionado pelo usuário, extraia o "referencia_id" do contexto e coloque em medicoId.
             - Se o CONTEXTO contém um serviço médico relevante, coloque seu ID em servicoMedicoId.
             - Se o CONTEXTO contém agendamento a cancelar, coloque seu ID em agendamentoId.
+
+            REGRA DE AUTENTICAÇÃO (IMPORTANTE):
+            - PERFIL DO USUÁRIO = "NÃO IDENTIFICADO" significa que o usuário ainda não confirmou sua identidade.
+            - Classifique a intenção real (AGENDAR, CANCELAR, etc.) mesmo com PERFIL "NÃO IDENTIFICADO". NUNCA troque a intenção para AUTENTICAR só por causa disso — a verificação de identidade é tratada automaticamente pelo sistema depois da classificação.
+            - Se PERFIL for "NÃO IDENTIFICADO" e a intenção for AGENDAR ou CANCELAR, ajuste respostaUsuario para pedir o e-mail cadastrado antes de prosseguir.
             """;
 
     private final MilvusIndexService milvusIndexService;
@@ -124,12 +129,27 @@ public class WhatsAppService {
         String respostaLLM = chatModel.generate(prompt);
         log.debug("WhatsApp LLM resposta bruta: {}", respostaLLM);
 
-        // 5. Sanitiza (remove CPF da resposta se o LLM repetir dados sensíveis)
-        var sanitizada = sanitizacaoGuardrail.validate(AiMessage.from(respostaLLM));
-        String textoFinal = sanitizada.isSuccess() ? respostaLLM : sanitizada.successText();
+        // 5. Parse JSON com fallback
+        WhatsAppClassificarResponse resposta = parseResposta(respostaLLM, request.mensagem());
 
-        // 6. Parse JSON com fallback
-        return parseResposta(textoFinal, request.mensagem());
+        // 6. Reforço determinístico: não deixa AGENDAR/CANCELAR prosseguir sem perfil identificado,
+        // independente do LLM ter seguido a instrução do prompt (defesa em profundidade)
+        if ((resposta.getIntent() == IntentWhatsApp.AGENDAR || resposta.getIntent() == IntentWhatsApp.CANCELAR)
+                && request.perfil() == null) {
+            resposta.setRespostaUsuario("Para "
+                    + (resposta.getIntent() == IntentWhatsApp.AGENDAR ? "agendar" : "cancelar")
+                    + ", primeiro preciso confirmar sua identidade. Digite seu e-mail cadastrado.");
+        }
+
+        // 7. Sanitiza só o texto de conversa (nunca as entidades estruturadas, ex.: cpf/email)
+        if (resposta.getRespostaUsuario() != null) {
+            var sanitizada = sanitizacaoGuardrail.validate(AiMessage.from(resposta.getRespostaUsuario()));
+            if (!sanitizada.isSuccess()) {
+                resposta.setRespostaUsuario(sanitizada.successText());
+            }
+        }
+
+        return resposta;
     }
 
     private WhatsAppClassificarResponse parseResposta(String texto, String mensagemOriginal) {
