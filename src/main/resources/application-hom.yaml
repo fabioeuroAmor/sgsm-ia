@@ -27,6 +27,8 @@ jwt:
 
 ia:
   provider: ollama
+  crypto:
+    nota-clinica-key: ${NOTA_CLINICA_CRYPTO_KEY}
 
 langchain4j:
   ollama:

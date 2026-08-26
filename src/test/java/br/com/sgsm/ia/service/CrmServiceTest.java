@@ -6,6 +6,7 @@ import br.com.sgsm.ia.dto.LeadRequest;
 import br.com.sgsm.ia.dto.NotaClinicaRequest;
 import br.com.sgsm.ia.dto.TagRequest;
 import br.com.sgsm.ia.security.ContextoSeguranca;
+import br.com.sgsm.ia.security.NotaClinicaCryptoService;
 import br.com.sgsm.ia.service.DocumentoBuilder;
 import br.com.sgsm.ia.service.MilvusIndexService;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -38,11 +40,14 @@ class CrmServiceTest {
     @Mock
     private MilvusIndexService milvusIndexService;
 
+    private NotaClinicaCryptoService notaClinicaCryptoService;
     private CrmService crmService;
 
     @BeforeEach
     void setUp() {
-        crmService = new CrmService(jdbc, contexto, documentoBuilder, milvusIndexService);
+        String chaveAes = Base64.getEncoder().encodeToString("chave-teste-de-32-bytes-exatos!!".getBytes());
+        notaClinicaCryptoService = new NotaClinicaCryptoService(chaveAes);
+        crmService = new CrmService(jdbc, contexto, documentoBuilder, milvusIndexService, notaClinicaCryptoService);
     }
 
     // ── listarLeads ───────────────────────────────────────────────────────────

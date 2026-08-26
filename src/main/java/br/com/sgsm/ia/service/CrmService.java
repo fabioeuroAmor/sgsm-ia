@@ -6,12 +6,14 @@ import br.com.sgsm.ia.dto.LeadRequest;
 import br.com.sgsm.ia.dto.NotaClinicaRequest;
 import br.com.sgsm.ia.dto.TagRequest;
 import br.com.sgsm.ia.security.ContextoSeguranca;
+import br.com.sgsm.ia.security.NotaClinicaCryptoService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,15 +27,18 @@ public class CrmService {
     private final ContextoSeguranca contexto;
     private final DocumentoBuilder documentoBuilder;
     private final MilvusIndexService milvusIndexService;
+    private final NotaClinicaCryptoService notaClinicaCryptoService;
 
     public CrmService(JdbcTemplate jdbc,
                       ContextoSeguranca contexto,
                       DocumentoBuilder documentoBuilder,
-                      MilvusIndexService milvusIndexService) {
+                      MilvusIndexService milvusIndexService,
+                      NotaClinicaCryptoService notaClinicaCryptoService) {
         this.jdbc = jdbc;
         this.contexto = contexto;
         this.documentoBuilder = documentoBuilder;
         this.milvusIndexService = milvusIndexService;
+        this.notaClinicaCryptoService = notaClinicaCryptoService;
     }
 
     private void reindexarPaciente(String pacienteId) {
@@ -158,7 +163,7 @@ public class CrmService {
     // ── NOTAS CLÍNICAS ────────────────────────────────────────────────────────
 
     public List<Map<String, Object>> listarNotas(String pacienteId) {
-        return jdbc.queryForList("""
+        var notas = jdbc.queryForList("""
                 SELECT nc.id::text, nc.paciente_id::text, nc.medico_id::text,
                        nc.tipo::text, nc.conteudo, nc.criado_em,
                        m.nome AS medico_nome
@@ -167,6 +172,13 @@ public class CrmService {
                 WHERE nc.paciente_id = ?::uuid
                 ORDER BY nc.criado_em DESC
                 """, pacienteId);
+        return notas.stream()
+                .map(nota -> {
+                    var copia = new LinkedHashMap<>(nota);
+                    copia.put("conteudo", notaClinicaCryptoService.decrypt((String) copia.get("conteudo")));
+                    return (Map<String, Object>) copia;
+                })
+                .toList();
     }
 
     public void adicionarNota(String pacienteId, NotaClinicaRequest req) {
@@ -177,7 +189,8 @@ public class CrmService {
                 INSERT INTO crm.nota_clinica (id, agendamento_id, paciente_id, medico_id, tipo, conteudo)
                 VALUES (gen_random_uuid(), ?::uuid, ?::uuid, ?::uuid, ?::crm.tipo_nota, ?)
                 """,
-                agendId, pacienteId, medicoId, req.tipo().toUpperCase(), req.conteudo());
+                agendId, pacienteId, medicoId, req.tipo().toUpperCase(),
+                notaClinicaCryptoService.encrypt(req.conteudo()));
         reindexarPaciente(pacienteId);
     }
 
