@@ -27,6 +27,9 @@ jwt:
 
 ia:
   provider: ollama
+  crypto:
+    # Chave de desenvolvimento local — NAO usar em producao. Em hom/prd vem de variável de ambiente.
+    nota-clinica-key: darxrcnm1j5yKMNibgwR9915HT35fzjyaZMP8rBGKt0=
 
 langchain4j:
   ollama:

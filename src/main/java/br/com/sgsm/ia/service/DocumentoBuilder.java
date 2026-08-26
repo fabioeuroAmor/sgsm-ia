@@ -1,5 +1,6 @@
 package br.com.sgsm.ia.service;
 
+import br.com.sgsm.ia.security.NotaClinicaCryptoService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -13,10 +14,12 @@ public class DocumentoBuilder {
 
     private final JdbcTemplate jdbc;
     private final KpiService kpiService;
+    private final NotaClinicaCryptoService notaClinicaCryptoService;
 
-    public DocumentoBuilder(JdbcTemplate jdbc, KpiService kpiService) {
+    public DocumentoBuilder(JdbcTemplate jdbc, KpiService kpiService, NotaClinicaCryptoService notaClinicaCryptoService) {
         this.jdbc = jdbc;
         this.kpiService = kpiService;
+        this.notaClinicaCryptoService = notaClinicaCryptoService;
     }
 
     public String construir(String tipo, String id) {
@@ -33,8 +36,11 @@ public class DocumentoBuilder {
     }
 
     private String construirPaciente(String id) {
+        // CPF nunca entra no texto vetorizado: não há motivo de negócio pro RAG "saber"
+        // o CPF, e desde a criptografia em repouso (item 2 do compliance) o valor na
+        // coluna é cifrado — incluí-lo aqui vazaria o ciphertext (ilegível) no índice.
         var sql = """
-            SELECT p.nome, p.cpf, p.data_nascimento, p.email, p.ativo,
+            SELECT p.nome, p.data_nascimento, p.email, p.ativo,
                    COUNT(a.id) FILTER (WHERE a.status='CONCLUIDO') AS consultas,
                    COALESCE(SUM(pg.valor) FILTER (WHERE pg.status='APROVADO'), 0) AS ltv,
                    MAX(a.data_hora_inicio) FILTER (WHERE a.status='CONCLUIDO') AS ultimo_agendamento
@@ -42,15 +48,14 @@ public class DocumentoBuilder {
             LEFT JOIN sgsm.agendamento a  ON a.paciente_id = p.id
             LEFT JOIN sgsm.pagamento pg   ON pg.paciente_id = p.id
             WHERE p.id = ?::uuid
-            GROUP BY p.id, p.nome, p.cpf, p.data_nascimento, p.email, p.ativo
+            GROUP BY p.id, p.nome, p.data_nascimento, p.email, p.ativo
             """;
         String textoBase = jdbc.query(sql, rs -> {
             if (!rs.next()) return "Paciente não encontrado: " + id;
-            return "Paciente: %s. Email: %s. CPF: %s. Data nascimento: %s. Consultas concluídas: %d. LTV total: R$ %.2f. Último agendamento: %s. Status: %s."
+            return "Paciente: %s. Email: %s. Data nascimento: %s. Consultas concluídas: %d. LTV total: R$ %.2f. Último agendamento: %s. Status: %s."
                     .formatted(
                             rs.getString("nome"),
                             rs.getString("email"),
-                            rs.getString("cpf"),
                             rs.getObject("data_nascimento"),
                             rs.getLong("consultas"),
                             rs.getDouble("ltv"),
@@ -68,11 +73,21 @@ public class DocumentoBuilder {
                 FROM crm.contato_paciente
                 WHERE paciente_id = ?::uuid ORDER BY criado_em DESC LIMIT 3
                 """, String.class, id);
+        // conteudo é cifrado em repouso (item 2 do compliance): o truncamento não pode
+        // mais ser feito em SQL (LEFT sobre o ciphertext seria ilegível) — decifra-se
+        // em Java e só então se resume o texto pro índice RAG.
         var notas = jdbc.queryForList("""
-                SELECT tipo || ': ' || LEFT(conteudo, 200) AS resumo
+                SELECT tipo, conteudo
                 FROM crm.nota_clinica
                 WHERE paciente_id = ?::uuid ORDER BY criado_em DESC LIMIT 3
-                """, String.class, id);
+                """, id)
+                .stream()
+                .map(linha -> {
+                    String texto = notaClinicaCryptoService.decrypt((String) linha.get("conteudo"));
+                    String resumo = texto != null && texto.length() > 200 ? texto.substring(0, 200) : texto;
+                    return linha.get("tipo") + ": " + resumo;
+                })
+                .toList();
 
         var sb = new StringBuilder(textoBase);
         if (!tags.isEmpty())     sb.append(" Tags CRM: ").append(String.join(", ", tags)).append(".");
