@@ -1,5 +1,6 @@
 package br.com.sgsm.ia.service;
 
+import br.com.sgsm.ia.security.NotaClinicaCryptoService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,6 +13,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,7 +32,8 @@ class DocumentoBuilderTest {
 
     @BeforeEach
     void setUp() {
-        documentoBuilder = new DocumentoBuilder(jdbc, kpiService);
+        String chaveAes = Base64.getEncoder().encodeToString("chave-teste-de-32-bytes-exatos!!".getBytes());
+        documentoBuilder = new DocumentoBuilder(jdbc, kpiService, new NotaClinicaCryptoService(chaveAes));
     }
 
     @SuppressWarnings("unchecked")
@@ -137,8 +140,8 @@ class DocumentoBuilderTest {
                 .thenReturn(java.util.List.of("vip", "diabetico"));
         when(jdbc.queryForList(contains("crm.contato_paciente"), eq(String.class), eq("id-1")))
                 .thenReturn(java.util.List.of("LIGACAO SAIDA: confirmação de consulta"));
-        when(jdbc.queryForList(contains("crm.nota_clinica"), eq(String.class), eq("id-1")))
-                .thenReturn(java.util.List.of("EVOLUCAO: paciente estável"));
+        when(jdbc.queryForList(contains("crm.nota_clinica"), eq("id-1")))
+                .thenReturn(java.util.List.of(Map.of("tipo", "EVOLUCAO", "conteudo", "paciente estável")));
 
         String texto = documentoBuilder.construir("PACIENTE", "id-1");
 

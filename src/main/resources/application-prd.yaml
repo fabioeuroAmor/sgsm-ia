@@ -34,6 +34,8 @@ jwt:
 
 ia:
   provider: openai
+  crypto:
+    nota-clinica-key: ${NOTA_CLINICA_CRYPTO_KEY}
 
 # OpenAI para producao - custo controlado, qualidade superior
 langchain4j:
