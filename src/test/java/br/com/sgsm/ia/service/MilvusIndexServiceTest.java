@@ -153,6 +153,14 @@ class MilvusIndexServiceTest {
     }
 
     @Test
+    void deveRemoverVetorEPurgarCrmDocumento() {
+        service.remover("PACIENTE", "id-1");
+
+        verify(store).removeAll(any(Filter.class));
+        verify(jdbc).update(contains("DELETE FROM crm.documento"), eq("PACIENTE"), eq("id-1"));
+    }
+
+    @Test
     void deveIndexarDocumentoAnaliticoComSucesso() {
         Embedding embedding = Embedding.from(new float[] {0.5f, 0.6f});
         when(embeddingModel.embed(any(TextSegment.class))).thenReturn(Response.from(embedding));

@@ -53,6 +53,12 @@ class VetorizacaoConsumerTest {
         return valores;
     }
 
+    private static Map<Object, Object> valores(String tipo, String id, String operacao) {
+        Map<Object, Object> valores = valores(tipo, id);
+        valores.put("operacao", operacao);
+        return valores;
+    }
+
     @Test
     void deveCriarConsumerGroupComSucesso() {
         when(streamOps.createGroup(eq("sgsm:events:vetorizacao"), any(ReadOffset.class), eq("sgsm-ia-group")))
@@ -105,6 +111,23 @@ class VetorizacaoConsumerTest {
 
         verify(milvusIndexService).upsert("PACIENTE", "id-1", "texto do paciente");
         verify(streamOps).acknowledge("sgsm:events:vetorizacao", "sgsm-ia-group", RecordId.of("1-1"));
+    }
+
+    @Test
+    void deveRemoverEmVezDeReindexarQuandoOperacaoAnonimizar() {
+        MapRecord<String, Object, Object> mensagem = MapRecord
+                .create("sgsm:events:vetorizacao", valores("PACIENTE", "id-3", "ANONIMIZAR"))
+                .withId(RecordId.of("1-3"));
+
+        when(streamOps.read(any(Consumer.class), any(StreamReadOptions.class), any(StreamOffset.class)))
+                .thenReturn(List.of(mensagem));
+
+        consumer.processar();
+
+        verify(milvusIndexService).remover("PACIENTE", "id-3");
+        verify(milvusIndexService, never()).upsert(anyString(), anyString(), anyString());
+        verifyNoInteractions(documentoBuilder);
+        verify(streamOps).acknowledge("sgsm:events:vetorizacao", "sgsm-ia-group", RecordId.of("1-3"));
     }
 
     @Test
