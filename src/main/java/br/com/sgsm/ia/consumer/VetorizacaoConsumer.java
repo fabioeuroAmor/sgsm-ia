@@ -66,13 +66,22 @@ public class VetorizacaoConsumer {
             for (MapRecord<String, Object, Object> msg : mensagens) {
                 String tipo = (String) msg.getValue().get("tipo");
                 String id = (String) msg.getValue().get("id");
+                String operacao = (String) msg.getValue().get("operacao");
                 try {
-                    String texto = documentoBuilder.construir(tipo, id);
-                    milvusIndexService.upsert(tipo, id, texto);
+                    // LGPD 3.3: ANONIMIZAR remove o vetor e purga crm.documento em vez de
+                    // reindexar — o dado pessoal já foi zerado no Postgres pelo sgsm, não há
+                    // mais o que vetorizar (e manter o vetor antigo vazaria dado anonimizado).
+                    if ("ANONIMIZAR".equals(operacao)) {
+                        milvusIndexService.remover(tipo, id);
+                    } else {
+                        String texto = documentoBuilder.construir(tipo, id);
+                        milvusIndexService.upsert(tipo, id, texto);
+                    }
                     redis.opsForStream().acknowledge(streamKey, group, msg.getId());
-                    log.info("Evento processado e ACK: tipo={} id={}", tipo, id);
+                    log.info("Evento processado e ACK: tipo={} id={} operacao={}", tipo, id, operacao);
                 } catch (Exception e) {
-                    log.warn("Falha ao processar evento tipo={} id={}. Sera reprocessado. Erro: {}", tipo, id, e.getMessage());
+                    log.warn("Falha ao processar evento tipo={} id={} operacao={}. Sera reprocessado. Erro: {}",
+                            tipo, id, operacao, e.getMessage());
                     // SEM ACK → permanece no stream para retry automático
                 }
             }

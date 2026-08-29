@@ -82,6 +82,16 @@ public class MilvusIndexService {
         store.removeAll(filtro);
     }
 
+    // LGPD 3.3 — direito ao esquecimento: remove o vetor do Milvus e purga a linha de
+    // crm.documento (ao contrário do upsert, aqui não há reindexação — o dado já foi
+    // anonimizado no Postgres pelo sgsm, então não sobra nada legítimo para vetorizar).
+    public void remover(String tipo, String referenciaId) {
+        removerVetorAnterior(tipo, referenciaId);
+        jdbc.update("DELETE FROM crm.documento WHERE tipo = ?::crm.tipo_documento AND referencia_id = ?::uuid",
+                tipo, referenciaId);
+        log.info("Removido do Milvus e purgado de crm.documento: tipo={} id={}", tipo, referenciaId);
+    }
+
     // Busca semântica top-K em todos os tipos de documento
     public List<EmbeddingMatch<TextSegment>> buscar(String pergunta) {
         return buscar(pergunta, null);
