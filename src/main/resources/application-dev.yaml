@@ -34,16 +34,16 @@ ia:
 langchain4j:
   ollama:
     chat-model:
-      base-url: http://localhost:11434
-      model-name: gpt-oss:120b-cloud
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model-name: ${OLLAMA_CHAT_MODEL:deepseek-r1:8b}
       temperature: 0.3
       max-tokens: 400
-      timeout: 40000
+      timeout: 300000
       log-requests: false
       log-responses: false
     embedding-model:
-      base-url: http://localhost:11434
-      model-name: nomic-embed-text
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model-name: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
       timeout: 60000
 
 logging:
