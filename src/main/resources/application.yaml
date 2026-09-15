@@ -24,3 +24,19 @@ ia:
 crm:
   analitico:
     sync-interval-ms: 1800000
+
+# Observabilidade: log estruturado (JSON, formato ECS) + tracing distribuido. O traceId/spanId
+# entra automaticamente no MDC (e portanto no log estruturado) e se propaga sozinho entre os
+# 4 servicos via header HTTP "traceparent" - nao precisa de codigo manual de correlacao.
+management:
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+
+logging:
+  structured:
+    format:
+      console: ecs

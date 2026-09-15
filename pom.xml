@@ -146,6 +146,17 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Observabilidade: log estruturado (JSON) + tracing distribuido (traceId/spanId
+             propagados via header traceparent, e injetados automaticamente no MDC) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-zipkin</artifactId>
+        </dependency>
+
     </dependencies>
 
     <build>
@@ -160,6 +171,9 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
+                    <!-- APM Glowroot: agente anexado automaticamente no "mvn spring-boot:run".
+                         UI standalone deste servico em http://localhost:4002 -->
+                    <jvmArguments>-javaagent:C:/AmbienteDev/glowroot/glowroot/glowroot.jar -Dglowroot.conf.dir=C:/AmbienteDev/glowroot/data/sgsm-ia -Dglowroot.data.dir=C:/AmbienteDev/glowroot/data/sgsm-ia -Dglowroot.log.dir=C:/AmbienteDev/glowroot/data/sgsm-ia -Dglowroot.tmp.dir=C:/AmbienteDev/glowroot/data/sgsm-ia</jvmArguments>
                 </configuration>
             </plugin>
             <plugin>
