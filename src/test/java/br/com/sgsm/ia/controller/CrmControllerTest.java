@@ -60,7 +60,7 @@ class CrmControllerTest {
     void criarLeadDeveRetornar201ComIdDoLead() {
         when(crmService.criarLead(any(LeadRequest.class))).thenReturn(Map.of("id", "uuid-1", "status", "NOVO"));
 
-        var req = new LeadRequest("Ana", "ana@email.com", null, null, "SITE", null);
+        var req = new LeadRequest("Ana", "ana@email.com", null, null, "SITE", null, null);
         var response = controller.criarLead(req);
 
         assertThat(response.getStatusCode().value()).isEqualTo(201);

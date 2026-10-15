@@ -29,6 +29,8 @@ ia:
   provider: ollama
   crypto:
     nota-clinica-key: ${NOTA_CLINICA_CRYPTO_KEY}
+  whatsapp:
+    service-key: ${WHATSAPP_SERVICE_KEY}
 
 langchain4j:
   ollama:

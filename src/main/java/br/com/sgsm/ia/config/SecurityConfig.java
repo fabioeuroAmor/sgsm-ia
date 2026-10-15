@@ -1,8 +1,13 @@
 package br.com.sgsm.ia.config;
 
 import br.com.sgsm.ia.security.JwtAuthFilter;
+import br.com.sgsm.ia.security.ServiceKeyFilter;
+import br.com.sgsm.ia.security.SecurityErrorHandlers;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -14,12 +19,23 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 public class SecurityConfig {
 
-    private final JwtAuthFilter jwtAuthFilter;
+    private static final String MEDICO = "MEDICO";
+    private static final String FUNCIONARIO = "FUNCIONARIO";
+    private static final String ADMIN_ESTABELECIMENTO = "ADMIN_ESTABELECIMENTO";
+    private static final String DESENVOLVEDOR = "DESENVOLVEDOR";
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter) {
+    private final JwtAuthFilter jwtAuthFilter;
+    private final String whatsAppServiceKey;
+
+    public SecurityConfig(JwtAuthFilter jwtAuthFilter,
+                          @Value("${ia.whatsapp.service-key:}") String whatsAppServiceKey) {
         this.jwtAuthFilter = jwtAuthFilter;
+        this.whatsAppServiceKey = whatsAppServiceKey;
     }
 
+    // Escopo fino (estabelecimento, posse do paciente) fica nos services via
+    // EscopoAcessoService; aqui só a primeira barreira: qual papel chama qual rota.
+    // PACIENTE não usa /crm nem /ia (o front não exibe essas telas para ele).
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
@@ -30,12 +46,37 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
-                                "/actuator/health",
-                                "/ia/whatsapp/**"
+                                "/actuator/health"
                         ).permitAll()
-                        .anyRequest().authenticated()
+                        // Bot do WhatsApp: token do usuário da sessão (normalmente PACIENTE) ou o
+                        // token de sistema; a chave de serviço é exigida pelo ServiceKeyFilter
+                        .requestMatchers("/ia/whatsapp/**").authenticated()
+                        .requestMatchers("/ia/etl/**").hasRole(DESENVOLVEDOR)
+                        .requestMatchers("/ia/kpis").hasAnyRole(ADMIN_ESTABELECIMENTO, DESENVOLVEDOR)
+                        .requestMatchers("/crm/churn").hasAnyRole(FUNCIONARIO, ADMIN_ESTABELECIMENTO, DESENVOLVEDOR)
+                        .requestMatchers("/crm/leads/**").hasAnyRole(FUNCIONARIO, ADMIN_ESTABELECIMENTO, DESENVOLVEDOR)
+                        .requestMatchers(HttpMethod.POST, "/crm/paciente/*/notas").hasRole(MEDICO)
+                        .requestMatchers("/crm/paciente/*/notas").hasAnyRole(MEDICO, DESENVOLVEDOR)
+                        .requestMatchers("/crm/**", "/ia/**")
+                        .hasAnyRole(MEDICO, FUNCIONARIO, ADMIN_ESTABELECIMENTO, DESENVOLVEDOR)
+                        .anyRequest().denyAll()
                 )
+                .exceptionHandling(e -> e
+                        .authenticationEntryPoint(SecurityErrorHandlers.naoAutenticado())
+                        .accessDeniedHandler(SecurityErrorHandlers.acessoNegado()))
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new ServiceKeyFilter(whatsAppServiceKey), JwtAuthFilter.class)
                 .build();
+    }
+
+    // JwtAuthFilter é @Component, então o Spring Boot também o registraria como filtro de
+    // servlet global, fora da cadeia do Spring Security. Se essa cópia rodar antes da cadeia,
+    // o SecurityContextHolderFilter descarta a autenticação e a cópia de dentro da cadeia é
+    // pulada (OncePerRequestFilter) — resultado: 401 com token válido. Ele só roda na cadeia.
+    @Bean
+    public FilterRegistrationBean<JwtAuthFilter> jwtAuthFilterRegistration(JwtAuthFilter filter) {
+        var registro = new FilterRegistrationBean<>(filter);
+        registro.setEnabled(false);
+        return registro;
     }
 }

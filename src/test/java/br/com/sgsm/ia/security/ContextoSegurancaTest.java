@@ -91,5 +91,29 @@ class ContextoSegurancaTest {
     void isMedicoSemAutenticacaoDeveRetornarFalse() {
         assertThat(contexto.isMedico()).isFalse();
         assertThat(contexto.isPaciente()).isFalse();
+        assertThat(contexto.isDesenvolvedor()).isFalse();
+    }
+
+    @Test
+    void deveIdentificarPapeisDeStaff() {
+        var auth = new UsernamePasswordAuthenticationToken("usuario", null, List.of(
+                new SimpleGrantedAuthority("ROLE_FUNCIONARIO"),
+                new SimpleGrantedAuthority("ROLE_ADMIN_ESTABELECIMENTO"),
+                new SimpleGrantedAuthority("ROLE_DESENVOLVEDOR")));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        assertThat(contexto.isFuncionario()).isTrue();
+        assertThat(contexto.isAdminEstabelecimento()).isTrue();
+        assertThat(contexto.isDesenvolvedor()).isTrue();
+        assertThat(contexto.isMedico()).isFalse();
+    }
+
+    @Test
+    void getEmailDeveRetornarAtributoDoRequest() {
+        var request = new MockHttpServletRequest();
+        request.setAttribute("email", "ana@sgsm.com");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        assertThat(contexto.getEmail()).isEqualTo("ana@sgsm.com");
     }
 }

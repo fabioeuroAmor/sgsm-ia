@@ -8,7 +8,7 @@ class CrmDtoTest {
 
     @Test
     void leadRequestDeveExporTodosOsCampos() {
-        var dto = new LeadRequest("Ana", "ana@email.com", "(11) 9999-0000", "Consulta", "SITE", "obs");
+        var dto = new LeadRequest("Ana", "ana@email.com", "(11) 9999-0000", "Consulta", "SITE", "obs", "estab-uuid");
 
         assertThat(dto.nome()).isEqualTo("Ana");
         assertThat(dto.email()).isEqualTo("ana@email.com");
@@ -16,6 +16,7 @@ class CrmDtoTest {
         assertThat(dto.interesse()).isEqualTo("Consulta");
         assertThat(dto.origem()).isEqualTo("SITE");
         assertThat(dto.observacoes()).isEqualTo("obs");
+        assertThat(dto.estabelecimentoId()).isEqualTo("estab-uuid");
     }
 
     @Test

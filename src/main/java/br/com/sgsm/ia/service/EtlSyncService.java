@@ -1,5 +1,6 @@
 package br.com.sgsm.ia.service;
 
+import br.com.sgsm.ia.exception.OperacaoEmAndamentoException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -7,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 @Service
@@ -26,6 +28,7 @@ public class EtlSyncService {
     private final JdbcTemplate jdbc;
     private final DocumentoBuilder documentoBuilder;
     private final MilvusIndexService milvusIndexService;
+    private final AtomicBoolean sincronizacaoEmAndamento = new AtomicBoolean(false);
 
     public EtlSyncService(JdbcTemplate jdbc,
                           DocumentoBuilder documentoBuilder,
@@ -57,6 +60,19 @@ public class EtlSyncService {
             milvusIndexService.indexarAnalitico(referenciaId, construtor.get());
         } catch (Exception e) {
             log.warn("Falha ao indexar documento analítico '{}': {}", referenciaId, e.getMessage());
+        }
+    }
+
+    // Ponto de entrada do POST /ia/etl/sync: reindexação é cara (embedding de todo o banco),
+    // então só uma execução por vez nesta instância — chamadas concorrentes recebem 409
+    public Map<String, Object> sincronizar(String tipo) {
+        if (!sincronizacaoEmAndamento.compareAndSet(false, true)) {
+            throw new OperacaoEmAndamentoException("Já existe uma sincronização ETL em andamento");
+        }
+        try {
+            return tipo != null ? syncTipo(tipo) : syncTodos();
+        } finally {
+            sincronizacaoEmAndamento.set(false);
         }
     }
 

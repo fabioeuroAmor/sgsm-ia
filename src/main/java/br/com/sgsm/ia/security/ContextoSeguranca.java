@@ -30,6 +30,22 @@ public class ContextoSeguranca {
         return temRole("ROLE_PACIENTE");
     }
 
+    public boolean isFuncionario() {
+        return temRole("ROLE_FUNCIONARIO");
+    }
+
+    public boolean isAdminEstabelecimento() {
+        return temRole("ROLE_ADMIN_ESTABELECIMENTO");
+    }
+
+    public boolean isDesenvolvedor() {
+        return temRole("ROLE_DESENVOLVEDOR");
+    }
+
+    public String getEmail() {
+        return atributoRequest("email");
+    }
+
     private boolean temRole(String role) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null) return false;

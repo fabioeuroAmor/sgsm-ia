@@ -100,13 +100,23 @@ public class MilvusIndexService {
     // Busca semântica top-K restrita a um tipo de documento (filtro aplicado no próprio Milvus,
     // para que o tipo pedido não seja excluído por concorrer com outros tipos no top-K geral)
     public List<EmbeddingMatch<TextSegment>> buscar(String pergunta, String tipo) {
+        Filter filtro = (tipo != null && !tipo.isBlank())
+                ? MetadataFilterBuilder.metadataKey("tipo").isEqualTo(tipo.toUpperCase())
+                : null;
+        return buscar(pergunta, filtro, iaProps.topK());
+    }
+
+    // Busca com filtro de metadata e limite explícitos — usada pela camada de autorização do RAG
+    // (RagAutorizacaoService), que busca mais que o top-K e corta depois de remover o que o
+    // usuário não pode ver
+    public List<EmbeddingMatch<TextSegment>> buscar(String pergunta, Filter filtro, int maxResults) {
         Embedding queryEmbedding = embeddingModel.embed(pergunta).content();
         var request = EmbeddingSearchRequest.builder()
                 .queryEmbedding(queryEmbedding)
-                .maxResults(iaProps.topK())
+                .maxResults(maxResults)
                 .minScore(0.5);
-        if (tipo != null && !tipo.isBlank()) {
-            request.filter(MetadataFilterBuilder.metadataKey("tipo").isEqualTo(tipo.toUpperCase()));
+        if (filtro != null) {
+            request.filter(filtro);
         }
         return store.search(request.build()).matches();
     }

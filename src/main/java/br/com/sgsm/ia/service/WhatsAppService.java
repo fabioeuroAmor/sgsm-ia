@@ -83,24 +83,24 @@ public class WhatsAppService {
             - Se PERFIL for "NÃO IDENTIFICADO" e a intenção for AGENDAR ou CANCELAR, ajuste respostaUsuario para pedir o e-mail cadastrado antes de prosseguir.
             """;
 
-    private final MilvusIndexService milvusIndexService;
+    private final RagAutorizacaoService ragAutorizacaoService;
     private final ChatLanguageModel chatModel;
     private final SanitizacaoGuardrail sanitizacaoGuardrail;
     private final ObjectMapper objectMapper;
 
-    public WhatsAppService(MilvusIndexService milvusIndexService,
+    public WhatsAppService(RagAutorizacaoService ragAutorizacaoService,
                            ChatLanguageModel chatModel,
                            SanitizacaoGuardrail sanitizacaoGuardrail,
                            ObjectMapper objectMapper) {
-        this.milvusIndexService = milvusIndexService;
+        this.ragAutorizacaoService = ragAutorizacaoService;
         this.chatModel = chatModel;
         this.sanitizacaoGuardrail = sanitizacaoGuardrail;
         this.objectMapper = objectMapper;
     }
 
     public WhatsAppClassificarResponse classificar(WhatsAppClassificarRequest request) {
-        // 1. Busca semântica no Milvus
-        List<EmbeddingMatch<TextSegment>> matches = milvusIndexService.buscar(request.mensagem());
+        // 1. Busca semântica no Milvus — só catálogo público + agendamentos do próprio paciente
+        List<EmbeddingMatch<TextSegment>> matches = ragAutorizacaoService.buscarParaWhatsApp(request.mensagem());
         String contexto = matches.stream()
                 .map(m -> m.embedded().text())
                 .distinct()

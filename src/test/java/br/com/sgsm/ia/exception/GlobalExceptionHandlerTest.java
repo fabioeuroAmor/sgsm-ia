@@ -44,6 +44,23 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void deveTratarAcessoNegadoComo403() {
+        var response = handler.handleAcessoNegado(new AcessoNegadoException("Acesso negado ao estabelecimento: x"), request);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(403);
+        assertThat(response.getBody().getTitle()).isEqualTo("Acesso negado");
+        assertThat(response.getBody().getType().toString()).contains("acesso-negado");
+    }
+
+    @Test
+    void deveTratarOperacaoEmAndamentoComo409() {
+        var response = handler.handleOperacaoEmAndamento(new OperacaoEmAndamentoException("sync em andamento"), request);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody().getDetail()).isEqualTo("sync em andamento");
+    }
+
+    @Test
     void deveTratarArgumentoInvalido() {
         var response = handler.handleArgumentoInvalido(new IllegalArgumentException("argumento ruim"), request);
 

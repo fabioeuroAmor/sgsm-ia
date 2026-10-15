@@ -3,17 +3,17 @@ package br.com.sgsm.ia.controller;
 import br.com.sgsm.ia.dto.BuscaResponse;
 import br.com.sgsm.ia.dto.ChatRequest;
 import br.com.sgsm.ia.dto.ChatResponse;
+import br.com.sgsm.ia.security.EscopoAcessoService;
 import br.com.sgsm.ia.service.AssistenteMedicoService;
 import br.com.sgsm.ia.service.EtlSyncService;
 import br.com.sgsm.ia.service.KpiService;
-import br.com.sgsm.ia.service.MilvusIndexService;
+import br.com.sgsm.ia.service.RagAutorizacaoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -24,18 +24,21 @@ import java.util.UUID;
 public class IaController {
 
     private final AssistenteMedicoService assistenteMedicoService;
-    private final MilvusIndexService milvusIndexService;
+    private final RagAutorizacaoService ragAutorizacaoService;
     private final KpiService kpiService;
     private final EtlSyncService etlSyncService;
+    private final EscopoAcessoService escopo;
 
     public IaController(AssistenteMedicoService assistenteMedicoService,
-                        MilvusIndexService milvusIndexService,
+                        RagAutorizacaoService ragAutorizacaoService,
                         KpiService kpiService,
-                        EtlSyncService etlSyncService) {
+                        EtlSyncService etlSyncService,
+                        EscopoAcessoService escopo) {
         this.assistenteMedicoService = assistenteMedicoService;
-        this.milvusIndexService = milvusIndexService;
+        this.ragAutorizacaoService = ragAutorizacaoService;
         this.kpiService = kpiService;
         this.etlSyncService = etlSyncService;
+        this.escopo = escopo;
     }
 
     @PostMapping("/chat")
@@ -46,12 +49,12 @@ public class IaController {
     }
 
     @GetMapping("/busca")
-    @Operation(summary = "Busca semântica nos documentos indexados")
+    @Operation(summary = "Busca semântica nos documentos indexados (filtrada pelo escopo do usuário)")
     public ResponseEntity<BuscaResponse> busca(
             @RequestParam String q,
             @RequestParam(required = false) String tipo) {
 
-        var matches = milvusIndexService.buscar(q, tipo);
+        var matches = ragAutorizacaoService.buscar(q, tipo);
 
         var documentos = matches.stream()
                 .map(m -> new BuscaResponse.DocumentoDto(
@@ -67,6 +70,7 @@ public class IaController {
     @GetMapping("/paciente/{id}/resumo")
     @Operation(summary = "Resumo inteligente de um paciente específico")
     public ResponseEntity<ChatResponse> resumoPaciente(@PathVariable UUID id) {
+        escopo.validarPacienteNoEscopo(id.toString());
         String pergunta = "Faça um resumo completo do paciente com id " + id
                 + " incluindo histórico de agendamentos, valor total de pagamentos e última consulta.";
         String resposta = assistenteMedicoService.responder(pergunta);
@@ -74,21 +78,16 @@ public class IaController {
     }
 
     @GetMapping("/kpis")
-    @Operation(summary = "KPIs consolidados do sistema")
+    @Operation(summary = "KPIs consolidados (sistema inteiro para DESENVOLVEDOR, estabelecimentos do usuário para os demais)")
     public ResponseEntity<Map<String, Object>> kpis() {
         return ResponseEntity.ok(kpiService.consolidado());
     }
 
     @PostMapping("/etl/sync")
     @Operation(summary = "Sincroniza todos os registros existentes com Milvus",
-               description = "Reindexação completa de todas as entidades. Operação demorada — use com cautela em produção.")
+               description = "Reindexação completa de todas as entidades. Operação demorada — uma execução por vez (409 se já houver outra em andamento).")
     public ResponseEntity<Map<String, Object>> etlSync(
             @RequestParam(required = false) String tipo) {
-
-        Map<String, Object> resultado = tipo != null
-                ? etlSyncService.syncTipo(tipo)
-                : etlSyncService.syncTodos();
-
-        return ResponseEntity.ok(resultado);
+        return ResponseEntity.ok(etlSyncService.sincronizar(tipo));
     }
 }

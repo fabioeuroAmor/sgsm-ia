@@ -26,7 +26,7 @@ import static org.mockito.Mockito.when;
 class WhatsAppServiceTest {
 
     @Mock
-    private MilvusIndexService milvusIndexService;
+    private RagAutorizacaoService ragAutorizacaoService;
     @Mock
     private ChatLanguageModel chatModel;
 
@@ -35,11 +35,11 @@ class WhatsAppServiceTest {
     @BeforeEach
     void setUp() {
         service = new WhatsAppService(
-                milvusIndexService, chatModel, new SanitizacaoGuardrail(), new ObjectMapper());
+                ragAutorizacaoService, chatModel, new SanitizacaoGuardrail(), new ObjectMapper());
     }
 
     private void semDocumentosNoMilvus() {
-        when(milvusIndexService.buscar(anyString())).thenReturn(List.of());
+        when(ragAutorizacaoService.buscarParaWhatsApp(anyString())).thenReturn(List.of());
     }
 
     private static String jsonConversar() {
@@ -49,7 +49,7 @@ class WhatsAppServiceTest {
 
     @Test
     void deveClassificarComSucessoDeduplicandoContextoDoMilvus() {
-        when(milvusIndexService.buscar(anyString())).thenReturn(List.of(
+        when(ragAutorizacaoService.buscarParaWhatsApp(anyString())).thenReturn(List.of(
                 new EmbeddingMatch<>(0.9, "id1", null, TextSegment.from("Dr. João - Cardiologia")),
                 new EmbeddingMatch<>(0.8, "id2", null, TextSegment.from("Dr. João - Cardiologia"))
         ));

@@ -1,5 +1,6 @@
 package br.com.sgsm.ia.service;
 
+import br.com.sgsm.ia.exception.OperacaoEmAndamentoException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -137,5 +139,50 @@ class EtlSyncServiceTest {
         service.syncAnalitico();
 
         verify(milvusIndexService).indexarAnalitico(eq("resumo-analitico"), anyString());
+    }
+
+    // ── sincronizar (POST /ia/etl/sync) ───────────────────────────────────────
+
+    @Test
+    void sincronizarComTipoDeveSincronizarSoAqueleTipo() {
+        when(jdbc.queryForList(contains("sgsm.medico"), eq(String.class))).thenReturn(List.of());
+
+        Map<String, Object> resultado = service.sincronizar("MEDICO");
+
+        assertThat(resultado.get("tipo")).isEqualTo("MEDICO");
+    }
+
+    @Test
+    void sincronizarSemTipoDeveSincronizarTodos() {
+        when(jdbc.queryForList(anyString(), eq(String.class))).thenReturn(List.of());
+
+        Map<String, Object> resultado = service.sincronizar(null);
+
+        assertThat(resultado).containsEntry("total", 0).containsEntry("erros", 0);
+    }
+
+    @Test
+    void sincronizarDeveRecusarExecucaoConcorrenteComOperacaoEmAndamento() {
+        // Simula uma segunda chamada chegando enquanto a primeira ainda está lendo o banco
+        when(jdbc.queryForList(contains("sgsm.paciente"), eq(String.class))).thenAnswer(inv -> {
+            assertThatThrownBy(() -> service.sincronizar("PACIENTE"))
+                    .isInstanceOf(OperacaoEmAndamentoException.class);
+            return List.of();
+        });
+
+        service.sincronizar("PACIENTE");
+
+        verify(jdbc).queryForList(contains("sgsm.paciente"), eq(String.class));
+    }
+
+    @Test
+    void sincronizarDeveLiberarATravaMesmoQuandoFalha() {
+        when(jdbc.queryForList(contains("sgsm.paciente"), eq(String.class)))
+                .thenThrow(new RuntimeException("db fora"))
+                .thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.sincronizar("PACIENTE")).isInstanceOf(RuntimeException.class);
+
+        assertThat(service.sincronizar("PACIENTE").get("total")).isEqualTo(0);
     }
 }

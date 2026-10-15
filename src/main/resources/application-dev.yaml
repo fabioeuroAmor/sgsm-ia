@@ -30,12 +30,15 @@ ia:
   crypto:
     # Chave de desenvolvimento local — NAO usar em producao. Em hom/prd vem de variável de ambiente.
     nota-clinica-key: darxrcnm1j5yKMNibgwR9915HT35fzjyaZMP8rBGKt0=
+  whatsapp:
+    # Segredo compartilhado com o ms-whatsapp-bot (header X-Service-Key) — valor de dev, NAO usar em producao
+    service-key: sgsm-whatsapp-service-key-dev
 
 langchain4j:
   ollama:
     chat-model:
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
-      model-name: ${OLLAMA_CHAT_MODEL:deepseek-r1:8b}
+      model-name: ${OLLAMA_CHAT_MODEL:gpt-oss:120b-cloud}
       temperature: 0.3
       max-tokens: 400
       timeout: 300000

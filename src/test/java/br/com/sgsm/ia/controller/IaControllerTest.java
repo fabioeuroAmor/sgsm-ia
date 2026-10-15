@@ -1,10 +1,12 @@
 package br.com.sgsm.ia.controller;
 
 import br.com.sgsm.ia.dto.ChatRequest;
+import br.com.sgsm.ia.exception.RecursoNaoEncontradoException;
+import br.com.sgsm.ia.security.EscopoAcessoService;
 import br.com.sgsm.ia.service.AssistenteMedicoService;
 import br.com.sgsm.ia.service.EtlSyncService;
 import br.com.sgsm.ia.service.KpiService;
-import br.com.sgsm.ia.service.MilvusIndexService;
+import br.com.sgsm.ia.service.RagAutorizacaoService;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
@@ -19,6 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -28,17 +31,19 @@ class IaControllerTest {
     @Mock
     private AssistenteMedicoService assistenteMedicoService;
     @Mock
-    private MilvusIndexService milvusIndexService;
+    private RagAutorizacaoService ragAutorizacaoService;
     @Mock
     private KpiService kpiService;
     @Mock
     private EtlSyncService etlSyncService;
+    @Mock
+    private EscopoAcessoService escopo;
 
     private IaController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new IaController(assistenteMedicoService, milvusIndexService, kpiService, etlSyncService);
+        controller = new IaController(assistenteMedicoService, ragAutorizacaoService, kpiService, etlSyncService, escopo);
     }
 
     @Test
@@ -52,37 +57,48 @@ class IaControllerTest {
     }
 
     @Test
-    void deveFiltrarBuscaPorTipo() {
+    void buscaDeveUsarABuscaAutorizadaComOTipoInformado() {
         var matchPaciente = new EmbeddingMatch<>(0.9, "id1", null,
                 TextSegment.from("texto paciente", Metadata.from(Map.of("tipo", "PACIENTE", "referencia_id", "1"))));
-        when(milvusIndexService.buscar("consulta", "PACIENTE")).thenReturn(List.of(matchPaciente));
+        when(ragAutorizacaoService.buscar("consulta", "PACIENTE")).thenReturn(List.of(matchPaciente));
 
         var response = controller.busca("consulta", "PACIENTE");
 
         assertThat(response.getBody().documentos()).hasSize(1);
         assertThat(response.getBody().documentos().get(0).tipo()).isEqualTo("PACIENTE");
-        verify(milvusIndexService, never()).buscar(anyString());
+        assertThat(response.getBody().documentos().get(0).referenciaId()).isEqualTo("1");
     }
 
     @Test
-    void deveRetornarTodosOsDocumentosQuandoTipoNaoInformado() {
-        var matchPaciente = new EmbeddingMatch<>(0.9, "id1", null,
-                TextSegment.from("texto paciente", Metadata.from(Map.of("tipo", "PACIENTE", "referencia_id", "1"))));
-        when(milvusIndexService.buscar("consulta", null)).thenReturn(List.of(matchPaciente));
+    void buscaSemTipoDeveRepassarTipoNulo() {
+        when(ragAutorizacaoService.buscar("consulta", null)).thenReturn(List.of());
 
         var response = controller.busca("consulta", null);
 
-        assertThat(response.getBody().documentos()).hasSize(1);
+        assertThat(response.getBody().documentos()).isEmpty();
+        verify(ragAutorizacaoService).buscar("consulta", null);
     }
 
     @Test
-    void deveGerarResumoDePaciente() {
+    void deveGerarResumoDePacienteDentroDoEscopo() {
         UUID id = UUID.randomUUID();
         when(assistenteMedicoService.responder(anyString())).thenReturn("resumo do paciente");
 
         var response = controller.resumoPaciente(id);
 
         assertThat(response.getBody().resposta()).isEqualTo("resumo do paciente");
+        verify(escopo).validarPacienteNoEscopo(id.toString());
+    }
+
+    @Test
+    void naoDeveChamarOLlmParaPacienteForaDoEscopo() {
+        UUID id = UUID.randomUUID();
+        doThrow(new RecursoNaoEncontradoException("Paciente não encontrado: " + id))
+                .when(escopo).validarPacienteNoEscopo(id.toString());
+
+        assertThatThrownBy(() -> controller.resumoPaciente(id))
+                .isInstanceOf(RecursoNaoEncontradoException.class);
+        verifyNoInteractions(assistenteMedicoService);
     }
 
     @Test
@@ -95,22 +111,12 @@ class IaControllerTest {
     }
 
     @Test
-    void deveSincronizarTipoEspecificoQuandoInformado() {
-        when(etlSyncService.syncTipo("PACIENTE")).thenReturn(Map.of("total", 5, "erros", 0));
+    void etlSyncDeveDelegarParaASincronizacaoExclusiva() {
+        when(etlSyncService.sincronizar("PACIENTE")).thenReturn(Map.of("total", 5, "erros", 0));
 
         var response = controller.etlSync("PACIENTE");
 
         assertThat(response.getBody().get("total")).isEqualTo(5);
-        verify(etlSyncService, never()).syncTodos();
-    }
-
-    @Test
-    void deveSincronizarTodosQuandoTipoNaoInformado() {
-        when(etlSyncService.syncTodos()).thenReturn(Map.of("total", 20, "erros", 1));
-
-        var response = controller.etlSync(null);
-
-        assertThat(response.getBody().get("total")).isEqualTo(20);
-        verify(etlSyncService, never()).syncTipo(anyString());
+        verify(etlSyncService).sincronizar("PACIENTE");
     }
 }

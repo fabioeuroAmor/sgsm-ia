@@ -27,6 +27,16 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, "recurso-nao-encontrado", "Recurso não encontrado", ex.getMessage(), req);
     }
 
+    @ExceptionHandler(AcessoNegadoException.class)
+    public ResponseEntity<ProblemDetail> handleAcessoNegado(AcessoNegadoException ex, HttpServletRequest req) {
+        return problem(HttpStatus.FORBIDDEN, "acesso-negado", "Acesso negado", ex.getMessage(), req);
+    }
+
+    @ExceptionHandler(OperacaoEmAndamentoException.class)
+    public ResponseEntity<ProblemDetail> handleOperacaoEmAndamento(OperacaoEmAndamentoException ex, HttpServletRequest req) {
+        return problem(HttpStatus.CONFLICT, "operacao-em-andamento", "Operação em andamento", ex.getMessage(), req);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ProblemDetail> handleArgumentoInvalido(IllegalArgumentException ex, HttpServletRequest req) {
         return problem(HttpStatus.BAD_REQUEST, "argumento-invalido", "Requisição inválida", ex.getMessage(), req);

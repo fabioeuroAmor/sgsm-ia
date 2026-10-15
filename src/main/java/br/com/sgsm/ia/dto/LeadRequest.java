@@ -6,5 +6,6 @@ public record LeadRequest(
         String telefone,
         String interesse,
         String origem,
-        String observacoes
+        String observacoes,
+        String estabelecimentoId
 ) {}

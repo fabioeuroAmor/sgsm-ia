@@ -145,6 +145,12 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- @WebMvcTest/MockMvc: testes de autorização passando pela cadeia real do Spring Security -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
 
         <!-- Observabilidade: log estruturado (JSON) + tracing distribuido (traceId/spanId
              propagados via header traceparent, e injetados automaticamente no MDC) -->
