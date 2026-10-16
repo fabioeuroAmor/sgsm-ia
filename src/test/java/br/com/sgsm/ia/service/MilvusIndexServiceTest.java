@@ -37,6 +37,8 @@ class MilvusIndexServiceTest {
     private EmbeddingModel embeddingModel;
     @Mock
     private JdbcTemplate jdbc;
+    @Mock
+    private EstabelecimentoDocumentoService estabelecimentoDocumentoService;
 
     private MilvusIndexService service;
 
@@ -44,13 +46,14 @@ class MilvusIndexServiceTest {
     void setUp() {
         IaProperties props = new IaProperties("openai", 10,
                 new IaProperties.RedisStreamProperties("stream", "group", "consumer"));
-        service = new MilvusIndexService(store, embeddingModel, jdbc, props);
+        service = new MilvusIndexService(store, embeddingModel, jdbc, props, estabelecimentoDocumentoService);
     }
 
     @Test
     void deveIndexarComSucesso() {
         Embedding embedding = Embedding.from(new float[] {0.1f, 0.2f});
         when(embeddingModel.embed(any(TextSegment.class))).thenReturn(Response.from(embedding));
+        when(estabelecimentoDocumentoService.tags("PACIENTE", "id-1")).thenReturn(List.of("clinica-1"));
         when(store.add(eq(embedding), any(TextSegment.class))).thenReturn("milvus-id-1");
 
         service.upsert("PACIENTE", "id-1", "conteudo do paciente");
@@ -65,6 +68,7 @@ class MilvusIndexServiceTest {
     void deveRemoverVetorAnteriorAntesDeReindexar() {
         Embedding embedding = Embedding.from(new float[] {0.1f, 0.2f});
         when(embeddingModel.embed(any(TextSegment.class))).thenReturn(Response.from(embedding));
+        when(estabelecimentoDocumentoService.tags("PACIENTE", "id-1")).thenReturn(List.of("clinica-1"));
         when(store.add(eq(embedding), any(TextSegment.class))).thenReturn("milvus-id-2");
 
         var inOrder = inOrder(store);
@@ -79,6 +83,7 @@ class MilvusIndexServiceTest {
     void deveRegistrarErroERelancarExcecaoQuandoFalhaAoIndexar() {
         Embedding embedding = Embedding.from(new float[] {0.1f, 0.2f});
         when(embeddingModel.embed(any(TextSegment.class))).thenReturn(Response.from(embedding));
+        when(estabelecimentoDocumentoService.tags("MEDICO", "id-2")).thenReturn(List.of("PUBLICO"));
         when(store.add(eq(embedding), any(TextSegment.class))).thenThrow(new RuntimeException("falha milvus"));
 
         assertThatThrownBy(() -> service.upsert("MEDICO", "id-2", "conteudo do medico"))
@@ -169,8 +174,33 @@ class MilvusIndexServiceTest {
         service.indexarAnalitico("resumo-analitico", "Resumo analítico do sistema.");
 
         verify(store).removeAll(any(Filter.class));
-        verify(store).add(eq(embedding), any(TextSegment.class));
-        verifyNoInteractions(jdbc);
+        var segmento = ArgumentCaptor.forClass(TextSegment.class);
+        verify(store).add(eq(embedding), segmento.capture());
+        assertThat(segmento.getValue().metadata().getString("estabelecimento_id")).isEqualTo("GLOBAL");
+        verifyNoInteractions(jdbc, estabelecimentoDocumentoService);
+    }
+
+    @Test
+    void documentoDeVariasClinicasDeveGerarUmVetorPorClinicaComOMesmoEmbedding() {
+        Embedding embedding = Embedding.from(new float[] {0.1f, 0.2f});
+        when(embeddingModel.embed(any(TextSegment.class))).thenReturn(Response.from(embedding));
+        when(estabelecimentoDocumentoService.tags("PACIENTE", "id-1")).thenReturn(List.of("clinica-1", "clinica-2"));
+        when(store.add(eq(embedding), any(TextSegment.class))).thenReturn("milvus-a", "milvus-b");
+
+        service.upsert("PACIENTE", "id-1", "conteudo");
+
+        verify(embeddingModel, times(1)).embed(any(TextSegment.class));
+        var segmentos = ArgumentCaptor.forClass(TextSegment.class);
+        verify(store, times(2)).add(eq(embedding), segmentos.capture());
+        assertThat(segmentos.getAllValues())
+                .extracting(seg -> seg.metadata().getString("estabelecimento_id"))
+                .containsExactly("clinica-1", "clinica-2");
+        assertThat(segmentos.getAllValues()).allSatisfy(seg -> {
+            assertThat(seg.metadata().getString("tipo")).isEqualTo("PACIENTE");
+            assertThat(seg.metadata().getString("referencia_id")).isEqualTo("id-1");
+        });
+        // crm.documento guarda o primeiro id
+        verify(jdbc).update(contains("INSERT INTO crm.documento"), any(), any(), any(), any(), eq("milvus-a"), eq("INDEXADO"));
     }
 
     @Test

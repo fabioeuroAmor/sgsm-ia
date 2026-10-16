@@ -114,6 +114,25 @@ class EscopoAcessoServiceTest {
         assertThat(sub.sql()).contains("WHERE false");
     }
 
+    // ── estabelecimentosPermitidosIds() ───────────────────────────────────────
+
+    @Test
+    void idsPermitidosParaDesenvolvedorSaoIrrestritos() {
+        when(contexto.isDesenvolvedor()).thenReturn(true);
+
+        assertThat(escopo.estabelecimentosPermitidosIds()).isNull();
+        verifyNoInteractions(jdbc);
+    }
+
+    @Test
+    void idsPermitidosExecutamASubconsultaDoPapel() {
+        comoAdmin();
+        when(jdbc.queryForList(argThat((String sql) -> sql.contains("sgsm.administrador_estabelecimento") && sql.contains("AS t(id)")),
+                eq(String.class), eq(REF))).thenReturn(java.util.List.of("clinica-1"));
+
+        assertThat(escopo.estabelecimentosPermitidosIds()).containsExactly("clinica-1");
+    }
+
     // ── medicos() / predicadoAgendamento() ────────────────────────────────────
 
     @Test

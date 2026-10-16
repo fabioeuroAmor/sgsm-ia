@@ -27,27 +27,35 @@ public class MilvusIndexService {
     private final EmbeddingModel embeddingModel;
     private final JdbcTemplate jdbc;
     private final IaProperties iaProps;
+    private final EstabelecimentoDocumentoService estabelecimentoDocumentoService;
 
     public MilvusIndexService(MilvusEmbeddingStore store,
                               EmbeddingModel embeddingModel,
                               JdbcTemplate jdbc,
-                              IaProperties iaProps) {
+                              IaProperties iaProps,
+                              EstabelecimentoDocumentoService estabelecimentoDocumentoService) {
         this.store = store;
         this.embeddingModel = embeddingModel;
         this.jdbc = jdbc;
         this.iaProps = iaProps;
+        this.estabelecimentoDocumentoService = estabelecimentoDocumentoService;
     }
 
-    // Upsert: remove entrada(s) anterior(es) com o mesmo (tipo, referencia_id) e insere o novo vetor
+    // Upsert: remove entrada(s) anterior(es) com o mesmo (tipo, referencia_id) e insere o novo vetor.
+    // Um vetor por estabelecimento do documento (o metadata do langchain4j não aceita lista) — o
+    // embedding é calculado uma vez só; a busca deduplica pelo texto.
     public void upsert(String tipo, String referenciaId, String conteudo) {
         try {
             removerVetorAnterior(tipo, referenciaId);
 
-            TextSegment segmento = TextSegment.from(conteudo,
-                    Metadata.from(Map.of("tipo", tipo, "referencia_id", referenciaId)));
-
-            Embedding embedding = embeddingModel.embed(segmento).content();
-            String milvusId = store.add(embedding, segmento);
+            Embedding embedding = embeddingModel.embed(TextSegment.from(conteudo)).content();
+            String milvusId = null;
+            for (String estabelecimento : estabelecimentoDocumentoService.tags(tipo, referenciaId)) {
+                String id = store.add(embedding, segmento(conteudo, tipo, referenciaId, estabelecimento));
+                if (milvusId == null) {
+                    milvusId = id;
+                }
+            }
 
             atualizarStatusDocumento(tipo, referenciaId, conteudo, milvusId, "INDEXADO");
             log.info("Indexado no Milvus: tipo={} id={} milvusId={}", tipo, referenciaId, milvusId);
@@ -64,14 +72,20 @@ public class MilvusIndexService {
         try {
             removerVetorAnterior("ANALITICO", referenciaId);
 
-            TextSegment segmento = TextSegment.from(texto,
-                    Metadata.from(Map.of("tipo", "ANALITICO", "referencia_id", referenciaId)));
+            TextSegment segmento = segmento(texto, "ANALITICO", referenciaId, EstabelecimentoDocumentoService.TAG_GLOBAL);
             Embedding embedding = embeddingModel.embed(segmento).content();
             store.add(embedding, segmento);
             log.info("Documento analítico '{}' indexado no Milvus", referenciaId);
         } catch (Exception e) {
             log.warn("Falha ao indexar documento analítico '{}': {}", referenciaId, e.getMessage());
         }
+    }
+
+    private static TextSegment segmento(String texto, String tipo, String referenciaId, String estabelecimento) {
+        return TextSegment.from(texto, Metadata.from(Map.of(
+                "tipo", tipo,
+                "referencia_id", referenciaId,
+                EstabelecimentoDocumentoService.CHAVE_METADATA, estabelecimento)));
     }
 
     // Remove por metadata (tipo + referencia_id) todos os vetores indexados anteriormente para essa entidade,

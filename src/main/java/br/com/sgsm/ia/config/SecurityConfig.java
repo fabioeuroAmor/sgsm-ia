@@ -1,12 +1,14 @@
 package br.com.sgsm.ia.config;
 
 import br.com.sgsm.ia.security.JwtAuthFilter;
+import br.com.sgsm.ia.security.RateLimitFilter;
 import br.com.sgsm.ia.security.ServiceKeyFilter;
 import br.com.sgsm.ia.security.SecurityErrorHandlers;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -14,6 +16,8 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+import java.time.Clock;
 
 @Configuration
 @EnableWebSecurity
@@ -26,11 +30,20 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final String whatsAppServiceKey;
+    private final StringRedisTemplate redis;
+    private final int limiteChatPorMinuto;
+    private final int limiteWhatsAppPorMinuto;
 
     public SecurityConfig(JwtAuthFilter jwtAuthFilter,
-                          @Value("${ia.whatsapp.service-key:}") String whatsAppServiceKey) {
+                          @Value("${ia.whatsapp.service-key:}") String whatsAppServiceKey,
+                          StringRedisTemplate redis,
+                          @Value("${ia.rate-limit.chat-por-minuto:20}") int limiteChatPorMinuto,
+                          @Value("${ia.rate-limit.whatsapp-por-minuto:120}") int limiteWhatsAppPorMinuto) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.whatsAppServiceKey = whatsAppServiceKey;
+        this.redis = redis;
+        this.limiteChatPorMinuto = limiteChatPorMinuto;
+        this.limiteWhatsAppPorMinuto = limiteWhatsAppPorMinuto;
     }
 
     // Escopo fino (estabelecimento, posse do paciente) fica nos services via
@@ -66,6 +79,9 @@ public class SecurityConfig {
                         .accessDeniedHandler(SecurityErrorHandlers.acessoNegado()))
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new ServiceKeyFilter(whatsAppServiceKey), JwtAuthFilter.class)
+                // Depois do JWT: o limite do chat é por usuário autenticado
+                .addFilterAfter(new RateLimitFilter(redis, limiteChatPorMinuto, limiteWhatsAppPorMinuto,
+                        Clock.systemUTC()), JwtAuthFilter.class)
                 .build();
     }
 

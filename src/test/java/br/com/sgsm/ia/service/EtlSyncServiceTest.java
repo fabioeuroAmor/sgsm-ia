@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,12 +26,18 @@ class EtlSyncServiceTest {
     private DocumentoBuilder documentoBuilder;
     @Mock
     private MilvusIndexService milvusIndexService;
+    @Mock
+    private TravaRedis travaRedis;
 
     private EtlSyncService service;
 
     @BeforeEach
     void setUp() {
-        service = new EtlSyncService(jdbc, documentoBuilder, milvusIndexService);
+        service = new EtlSyncService(jdbc, documentoBuilder, milvusIndexService, travaRedis);
+    }
+
+    private void travaLivre() {
+        when(travaRedis.adquirir(EtlSyncService.CHAVE_TRAVA, EtlSyncService.TTL_TRAVA)).thenReturn(Optional.of("token-1"));
     }
 
     @Test
@@ -144,16 +151,19 @@ class EtlSyncServiceTest {
     // ── sincronizar (POST /ia/etl/sync) ───────────────────────────────────────
 
     @Test
-    void sincronizarComTipoDeveSincronizarSoAqueleTipo() {
+    void sincronizarComTipoDeveSincronizarSoAqueleTipoELiberarATrava() {
+        travaLivre();
         when(jdbc.queryForList(contains("sgsm.medico"), eq(String.class))).thenReturn(List.of());
 
         Map<String, Object> resultado = service.sincronizar("MEDICO");
 
         assertThat(resultado.get("tipo")).isEqualTo("MEDICO");
+        verify(travaRedis).liberar(EtlSyncService.CHAVE_TRAVA, "token-1");
     }
 
     @Test
     void sincronizarSemTipoDeveSincronizarTodos() {
+        travaLivre();
         when(jdbc.queryForList(anyString(), eq(String.class))).thenReturn(List.of());
 
         Map<String, Object> resultado = service.sincronizar(null);
@@ -161,28 +171,23 @@ class EtlSyncServiceTest {
         assertThat(resultado).containsEntry("total", 0).containsEntry("erros", 0);
     }
 
+    // Outra réplica (ou outra chamada) já detém a trava no Redis
     @Test
-    void sincronizarDeveRecusarExecucaoConcorrenteComOperacaoEmAndamento() {
-        // Simula uma segunda chamada chegando enquanto a primeira ainda está lendo o banco
-        when(jdbc.queryForList(contains("sgsm.paciente"), eq(String.class))).thenAnswer(inv -> {
-            assertThatThrownBy(() -> service.sincronizar("PACIENTE"))
-                    .isInstanceOf(OperacaoEmAndamentoException.class);
-            return List.of();
-        });
+    void sincronizarDeveRecusarComOperacaoEmAndamentoQuandoATravaEstaOcupada() {
+        when(travaRedis.adquirir(EtlSyncService.CHAVE_TRAVA, EtlSyncService.TTL_TRAVA)).thenReturn(Optional.empty());
 
-        service.sincronizar("PACIENTE");
-
-        verify(jdbc).queryForList(contains("sgsm.paciente"), eq(String.class));
+        assertThatThrownBy(() -> service.sincronizar("PACIENTE")).isInstanceOf(OperacaoEmAndamentoException.class);
+        verifyNoInteractions(jdbc);
+        verify(travaRedis, never()).liberar(anyString(), anyString());
     }
 
     @Test
     void sincronizarDeveLiberarATravaMesmoQuandoFalha() {
-        when(jdbc.queryForList(contains("sgsm.paciente"), eq(String.class)))
-                .thenThrow(new RuntimeException("db fora"))
-                .thenReturn(List.of());
+        travaLivre();
+        when(jdbc.queryForList(contains("sgsm.paciente"), eq(String.class))).thenThrow(new RuntimeException("db fora"));
 
         assertThatThrownBy(() -> service.sincronizar("PACIENTE")).isInstanceOf(RuntimeException.class);
 
-        assertThat(service.sincronizar("PACIENTE").get("total")).isEqualTo(0);
+        verify(travaRedis).liberar(EtlSyncService.CHAVE_TRAVA, "token-1");
     }
 }

@@ -235,7 +235,7 @@ public class DocumentoBuilder {
 
     private String construirServico(String id) {
         var sql = """
-            SELECT s.nome, s.descricao, s.valor, s.duracao_minutos, s.ativo, m.nome AS medico, m.especialidade
+            SELECT s.nome, s.descricao, s.preco AS valor, s.duracao_minutos, s.ativo, m.nome AS medico, m.especialidade
             FROM sgsm.servico_medico s
             JOIN sgsm.medico m ON m.id = s.medico_id
             WHERE s.id = ?::uuid

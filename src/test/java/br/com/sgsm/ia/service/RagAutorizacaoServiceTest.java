@@ -41,6 +41,8 @@ class RagAutorizacaoServiceTest {
     @BeforeEach
     void setUp() {
         rag = new RagAutorizacaoService(milvusIndexService, escopo, contexto, new IaProperties("ollama", TOP_K, null));
+        // Usuário (não DEV) da clinica-1, salvo indicação em contrário
+        lenient().when(escopo.estabelecimentosPermitidosIds()).thenReturn(List.of("clinica-1"));
     }
 
     private static EmbeddingMatch<TextSegment> doc(String tipo, String referenciaId) {
@@ -55,7 +57,11 @@ class RagAutorizacaoServiceTest {
     }
 
     private static boolean aceita(Filter filtro, String tipo) {
-        return filtro.test(Metadata.from(Map.of("tipo", tipo, "referencia_id", "x")));
+        return aceita(filtro, tipo, "PUBLICO");
+    }
+
+    private static boolean aceita(Filter filtro, String tipo, String estabelecimento) {
+        return filtro.test(Metadata.from(Map.of("tipo", tipo, "referencia_id", "x", "estabelecimento_id", estabelecimento)));
     }
 
     // ── buscar (chat / busca) ─────────────────────────────────────────────────
@@ -77,8 +83,34 @@ class RagAutorizacaoServiceTest {
         rag.buscar("faturamento", null);
 
         Filter filtro = filtroUsadoNaBusca();
-        assertThat(aceita(filtro, "ANALITICO")).isFalse();
+        assertThat(aceita(filtro, "ANALITICO", "GLOBAL")).isFalse();
         assertThat(aceita(filtro, "MEDICO")).isTrue();
+    }
+
+    @Test
+    void naoDesenvolvedorSoBuscaNoMilvusCatalogoEAsPropriasClinicas() {
+        when(milvusIndexService.buscar(anyString(), any(Filter.class), anyInt())).thenReturn(List.of());
+
+        rag.buscar("pacientes", null);
+
+        Filter filtro = filtroUsadoNaBusca();
+        assertThat(aceita(filtro, "AGENDAMENTO", "clinica-1")).isTrue();
+        assertThat(aceita(filtro, "SERVICO_MEDICO", "PUBLICO")).isTrue();
+        assertThat(aceita(filtro, "AGENDAMENTO", "clinica-de-outro")).isFalse();
+        assertThat(aceita(filtro, "LEAD", "NENHUM")).isFalse();
+    }
+
+    @Test
+    void usuarioSemClinicaSoBuscaCatalogo() {
+        when(escopo.estabelecimentosPermitidosIds()).thenReturn(List.of());
+        when(milvusIndexService.buscar(anyString(), any(Filter.class), anyInt())).thenReturn(List.of());
+
+        rag.buscar("pacientes", "AGENDAMENTO");
+
+        Filter filtro = filtroUsadoNaBusca();
+        assertThat(aceita(filtro, "AGENDAMENTO", "clinica-1")).isFalse();
+        assertThat(aceita(filtro, "AGENDAMENTO", "PUBLICO")).isTrue();
+        assertThat(aceita(filtro, "MEDICO", "PUBLICO")).isFalse(); // tipo pedido = AGENDAMENTO
     }
 
     @Test
@@ -104,7 +136,8 @@ class RagAutorizacaoServiceTest {
         when(milvusIndexService.buscar(anyString(), any(Filter.class), anyInt())).thenReturn(docs);
 
         assertThat(rag.buscar("consulta", null)).containsExactlyElementsOf(docs);
-        verifyNoInteractions(escopo);
+        verify(escopo, never()).existe(anyString(), any(Object[].class));
+        verify(escopo, never()).pacienteAtendidoPeloMedico(anyString());
     }
 
     @Test

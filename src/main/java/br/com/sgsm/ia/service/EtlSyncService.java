@@ -6,9 +6,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 @Service
@@ -25,17 +25,24 @@ public class EtlSyncService {
             "LEAD",            "SELECT id::text FROM crm.lead"
     );
 
+    static final String CHAVE_TRAVA = "sgsm-ia:trava:etl-sync";
+    // Folga generosa: uma reindexação completa pode demorar; o TTL só existe para liberar a
+    // trava se a instância cair no meio da sincronização
+    static final Duration TTL_TRAVA = Duration.ofHours(2);
+
     private final JdbcTemplate jdbc;
     private final DocumentoBuilder documentoBuilder;
     private final MilvusIndexService milvusIndexService;
-    private final AtomicBoolean sincronizacaoEmAndamento = new AtomicBoolean(false);
+    private final TravaRedis travaRedis;
 
     public EtlSyncService(JdbcTemplate jdbc,
                           DocumentoBuilder documentoBuilder,
-                          MilvusIndexService milvusIndexService) {
+                          MilvusIndexService milvusIndexService,
+                          TravaRedis travaRedis) {
         this.jdbc = jdbc;
         this.documentoBuilder = documentoBuilder;
         this.milvusIndexService = milvusIndexService;
+        this.travaRedis = travaRedis;
     }
 
     public void syncAnalitico() {
@@ -64,15 +71,14 @@ public class EtlSyncService {
     }
 
     // Ponto de entrada do POST /ia/etl/sync: reindexação é cara (embedding de todo o banco),
-    // então só uma execução por vez nesta instância — chamadas concorrentes recebem 409
+    // então só uma execução por vez em todas as réplicas — chamadas concorrentes recebem 409
     public Map<String, Object> sincronizar(String tipo) {
-        if (!sincronizacaoEmAndamento.compareAndSet(false, true)) {
-            throw new OperacaoEmAndamentoException("Já existe uma sincronização ETL em andamento");
-        }
+        String token = travaRedis.adquirir(CHAVE_TRAVA, TTL_TRAVA)
+                .orElseThrow(() -> new OperacaoEmAndamentoException("Já existe uma sincronização ETL em andamento"));
         try {
             return tipo != null ? syncTipo(tipo) : syncTodos();
         } finally {
-            sincronizacaoEmAndamento.set(false);
+            travaRedis.liberar(CHAVE_TRAVA, token);
         }
     }
 

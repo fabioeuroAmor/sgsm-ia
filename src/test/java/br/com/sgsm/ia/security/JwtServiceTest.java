@@ -18,12 +18,21 @@ class JwtServiceTest {
     private final JwtService jwtService = new JwtService(props);
 
     private String gerarToken(String secret, String subject) {
+        return gerarToken(secret, subject, "sgsm-auth", "sgsm-ia");
+    }
+
+    private String gerarToken(String secret, String subject, String emissor, String audiencia) {
         SecretKey chave = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(subject)
-                .claim("perfil", "MEDICO")
-                .signWith(chave)
-                .compact();
+                .claim("perfil", "MEDICO");
+        if (emissor != null) {
+            builder.issuer(emissor);
+        }
+        if (audiencia != null) {
+            builder.audience().add(audiencia);
+        }
+        return builder.signWith(chave).compact();
     }
 
     @Test
@@ -44,5 +53,22 @@ class JwtServiceTest {
     @Test
     void deveInvalidarTokenMalFormado() {
         assertThat(jwtService.tokenValido("token-invalido")).isFalse();
+    }
+
+    // Mesmo segredo, mas sem iss/aud: emitido antes desta versão ou por outro sistema
+    @Test
+    void deveInvalidarTokenSemIssuerEAudiencia() {
+        assertThat(jwtService.tokenValido(gerarToken(SEGREDO, "u", null, null))).isFalse();
+    }
+
+    @Test
+    void deveInvalidarTokenDeOutroEmissor() {
+        assertThat(jwtService.tokenValido(gerarToken(SEGREDO, "u", "outro-sistema", "sgsm-ia"))).isFalse();
+    }
+
+    // Token emitido só para o sgsm não vale no sgsm-ia
+    @Test
+    void deveInvalidarTokenSemSgsmIaNaAudiencia() {
+        assertThat(jwtService.tokenValido(gerarToken(SEGREDO, "u", "sgsm-auth", "sgsm"))).isFalse();
     }
 }

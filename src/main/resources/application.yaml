@@ -16,6 +16,10 @@ milvus:
 
 ia:
   top-k: 10
+  # Rotas que chamam o LLM: chat/resumo por usuário, WhatsApp global (janela de 1 min, Redis)
+  rate-limit:
+    chat-por-minuto: ${IA_RATE_LIMIT_CHAT_POR_MINUTO:20}
+    whatsapp-por-minuto: ${IA_RATE_LIMIT_WHATSAPP_POR_MINUTO:120}
   redis:
     stream-key: sgsm:events:vetorizacao
     group: sgsm-ia-group

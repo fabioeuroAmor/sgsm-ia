@@ -93,6 +93,8 @@ class SecurityConfigTest {
         return Jwts.builder()
                 .subject(UUID.randomUUID().toString())
                 .id(UUID.randomUUID().toString())
+                .issuer("sgsm-auth")
+                .audience().add("sgsm-ia").and()
                 .claim("perfil", role)
                 .claim("referenciaId", UUID.randomUUID().toString())
                 .claim("roles", List.of(role))
@@ -177,12 +179,39 @@ class SecurityConfigTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    // Assinado com o segredo certo, mas sem iss/aud (emitido antes da Fase 8 ou só para o sgsm)
+    @Test
+    void deveRejeitarTokenSemAudienciaDoSgsmIa() throws Exception {
+        String soParaSgsm = Jwts.builder()
+                .subject("usuario")
+                .issuer("sgsm-auth")
+                .audience().add("sgsm").and()
+                .claim("roles", List.of(DEV))
+                .expiration(new Date(System.currentTimeMillis() + 60_000))
+                .signWith(Keys.hmacShaKeyFor(SEGREDO.getBytes(StandardCharsets.UTF_8)))
+                .compact();
+
+        mockMvc.perform(req(HttpMethod.GET, "/ia/kpis").header("Authorization", "Bearer " + soParaSgsm))
+                .andExpect(status().isUnauthorized());
+    }
+
     @Test
     void deveRejeitarTokenNaBlacklist() throws Exception {
         when(redis.hasKey(anyString())).thenReturn(true);
 
         mockMvc.perform(req(HttpMethod.GET, "/ia/kpis").header("Authorization", "Bearer " + token(DEV)))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void chatAcimaDoLimiteDeveResponder429NaCadeiaReal() throws Exception {
+        var valores = org.mockito.Mockito.mock(org.springframework.data.redis.core.ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(valores);
+        when(valores.increment(anyString())).thenReturn(1_000L);
+
+        mockMvc.perform(req(HttpMethod.POST, "/ia/chat").header("Authorization", "Bearer " + token(MEDICO)))
+                .andExpect(status().isTooManyRequests());
     }
 
     @Test

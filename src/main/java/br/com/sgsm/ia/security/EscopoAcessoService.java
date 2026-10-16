@@ -69,6 +69,17 @@ public class EscopoAcessoService {
         return new Subconsulta(NENHUM, List.of());
     }
 
+    // IDs dos estabelecimentos permitidos já resolvidos (para filtros fora do SQL, ex.: metadata do
+    // Milvus). null = irrestrito (DESENVOLVEDOR); lista vazia = nenhum
+    public List<String> estabelecimentosPermitidosIds() {
+        Subconsulta estabelecimentos = estabelecimentos();
+        if (estabelecimentos == null) {
+            return null;
+        }
+        return jdbc.queryForList("SELECT t.id::text FROM (" + estabelecimentos.sql() + ") AS t(id)",
+                String.class, estabelecimentos.params().toArray());
+    }
+
     // Médicos vinculados (ativos) a algum estabelecimento permitido. É a base do escopo de
     // paciente — via agendamento.medico_id, não agendamento.estabelecimento_id, que fica nulo
     // em agendamento domiciliar. null = irrestrito.

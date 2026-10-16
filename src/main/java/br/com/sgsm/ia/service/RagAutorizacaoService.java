@@ -10,6 +10,7 @@ import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -48,14 +49,27 @@ public class RagAutorizacaoService {
         if (!desenvolvedor && "ANALITICO".equals(tipoNormalizado)) {
             return List.of();
         }
-        Filter filtro;
-        if (tipoNormalizado != null) {
-            filtro = MetadataFilterBuilder.metadataKey("tipo").isEqualTo(tipoNormalizado);
-        } else {
-            filtro = desenvolvedor ? null : MetadataFilterBuilder.metadataKey("tipo").isNotEqualTo("ANALITICO");
+        Filter filtro = tipoNormalizado != null
+                ? MetadataFilterBuilder.metadataKey("tipo").isEqualTo(tipoNormalizado)
+                : null;
+        if (!desenvolvedor) {
+            // Pré-filtro por clínica no próprio Milvus: só catálogo público e documentos dos
+            // estabelecimentos do usuário (exclui GLOBAL/ANALITICO e NENHUM)
+            Filter clinicas = filtroDeClinicas();
+            filtro = filtro == null ? clinicas : filtro.and(clinicas);
         }
         return filtrar(milvusIndexService.buscar(pergunta, filtro, iaProps.topK() * FATOR_OVERFETCH),
                 this::podeVer);
+    }
+
+    private Filter filtroDeClinicas() {
+        var permitidas = new ArrayList<String>();
+        permitidas.add(EstabelecimentoDocumentoService.TAG_PUBLICO);
+        List<String> ids = escopo.estabelecimentosPermitidosIds();
+        if (ids != null) {
+            permitidas.addAll(ids);
+        }
+        return MetadataFilterBuilder.metadataKey(EstabelecimentoDocumentoService.CHAVE_METADATA).isIn(permitidas);
     }
 
     // Canal WhatsApp: só catálogo público, mais os agendamentos do próprio paciente quando o
