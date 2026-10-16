@@ -23,4 +23,9 @@ class AppConfigTest {
 
         assertThat(json).isEqualTo("\"2026-08-19\"");
     }
+
+    @Test
+    void deveFornecerRelogioDoSistema() {
+        assertThat(appConfig.clock()).isNotNull();
+    }
 }

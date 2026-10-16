@@ -32,7 +32,16 @@ class AuditoriaServiceTest {
         auditoriaService.registrarLeitura("NOTA_CLINICA", "paciente-uuid");
 
         verify(jdbc).update(contains("INSERT INTO sgsm.log_acesso"),
-                eq("medico-uuid"), eq("MEDICO"), eq("dr@sgsm.com"), eq("NOTA_CLINICA"), eq("paciente-uuid"));
+                eq("medico-uuid"), eq("MEDICO"), eq("dr@sgsm.com"), eq("NOTA_CLINICA"), eq("paciente-uuid"), eq("LEITURA"));
+    }
+
+    @Test
+    void deveGravarAcaoComAutorInformadoQuandoNaoHaUsuarioNaRequisicao() {
+        auditoriaService.registrar("META_CONEXAO", "estab-uuid", "CRIACAO", "admin-uuid", "ADMIN_ESTABELECIMENTO", "a@sgsm.com");
+
+        verify(jdbc).update(contains("INSERT INTO sgsm.log_acesso"), eq("admin-uuid"), eq("ADMIN_ESTABELECIMENTO"),
+                eq("a@sgsm.com"), eq("META_CONEXAO"), eq("estab-uuid"), eq("CRIACAO"));
+        verifyNoInteractions(contexto);
     }
 
     // Fail closed: sem auditoria, a leitura do dado sensível não acontece

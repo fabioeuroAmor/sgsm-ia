@@ -81,6 +81,21 @@ public class MilvusIndexService {
         }
     }
 
+    // Documento agregado de uma clínica (ex.: resumo de tráfego pago), sem crm.documento — mesma
+    // ideia do indexarAnalitico, mas com a tag da própria clínica em vez de GLOBAL
+    public void indexarDocumentoDeClinica(String tipo, String referenciaId, String texto, String estabelecimentoId) {
+        removerVetorAnterior(tipo, referenciaId);
+        TextSegment segmento = segmento(texto, tipo, referenciaId, estabelecimentoId);
+        store.add(embeddingModel.embed(segmento).content(), segmento);
+        log.info("Documento {} da clínica {} indexado no Milvus", tipo, estabelecimentoId);
+    }
+
+    // Par do indexarDocumentoDeClinica: só o vetor (não há linha em crm.documento para apagar)
+    public void removerDocumentoDeClinica(String tipo, String referenciaId) {
+        removerVetorAnterior(tipo, referenciaId);
+        log.info("Documento {} '{}' removido do Milvus", tipo, referenciaId);
+    }
+
     private static TextSegment segmento(String texto, String tipo, String referenciaId, String estabelecimento) {
         return TextSegment.from(texto, Metadata.from(Map.of(
                 "tipo", tipo,

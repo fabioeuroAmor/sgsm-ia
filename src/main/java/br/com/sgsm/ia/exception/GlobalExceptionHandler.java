@@ -1,5 +1,6 @@
 package br.com.sgsm.ia.exception;
 
+import br.com.sgsm.ia.marketing.meta.MetaApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +36,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(OperacaoEmAndamentoException.class)
     public ResponseEntity<ProblemDetail> handleOperacaoEmAndamento(OperacaoEmAndamentoException ex, HttpServletRequest req) {
         return problem(HttpStatus.CONFLICT, "operacao-em-andamento", "Operação em andamento", ex.getMessage(), req);
+    }
+
+    @ExceptionHandler(IntegracaoNaoConfiguradaException.class)
+    public ResponseEntity<ProblemDetail> handleIntegracaoNaoConfigurada(IntegracaoNaoConfiguradaException ex, HttpServletRequest req) {
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, "integracao-nao-configurada", "Integração não configurada",
+                ex.getMessage(), req);
+    }
+
+    @ExceptionHandler(MetaApiException.class)
+    public ResponseEntity<ProblemDetail> handleMetaApi(MetaApiException ex, HttpServletRequest req) {
+        log.warn("Erro da Meta em {}: codigo={} {}", req.getRequestURI(), ex.getCodigo(), ex.getMessage());
+        String detalhe = ex.tokenInvalido()
+                ? "A conexão com a Meta expirou ou foi revogada. Reconecte a conta Meta Ads."
+                : "Falha na comunicação com a Meta. Tente novamente em instantes.";
+        return problem(HttpStatus.BAD_GATEWAY, "erro-meta", "Erro na Meta", detalhe, req);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

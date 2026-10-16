@@ -166,6 +166,30 @@ class MilvusIndexServiceTest {
     }
 
     @Test
+    void documentoDeClinicaDeveSubstituirOAnteriorComATagDaClinica() {
+        Embedding embedding = Embedding.from(new float[] {0.7f});
+        when(embeddingModel.embed(any(TextSegment.class))).thenReturn(Response.from(embedding));
+
+        service.indexarDocumentoDeClinica("MARKETING", "clinica-1", "resumo", "clinica-1");
+
+        var ordem = inOrder(store);
+        ordem.verify(store).removeAll(any(Filter.class));
+        var segmento = ArgumentCaptor.forClass(TextSegment.class);
+        ordem.verify(store).add(eq(embedding), segmento.capture());
+        assertThat(segmento.getValue().metadata().getString("tipo")).isEqualTo("MARKETING");
+        assertThat(segmento.getValue().metadata().getString("estabelecimento_id")).isEqualTo("clinica-1");
+        verifyNoInteractions(jdbc);
+    }
+
+    @Test
+    void removerDocumentoDeClinicaApagaSoOVetor() {
+        service.removerDocumentoDeClinica("MARKETING", "clinica-1");
+
+        verify(store).removeAll(any(Filter.class));
+        verifyNoInteractions(jdbc);
+    }
+
+    @Test
     void deveIndexarDocumentoAnaliticoComSucesso() {
         Embedding embedding = Embedding.from(new float[] {0.5f, 0.6f});
         when(embeddingModel.embed(any(TextSegment.class))).thenReturn(Response.from(embedding));

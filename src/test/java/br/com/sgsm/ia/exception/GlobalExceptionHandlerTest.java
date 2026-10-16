@@ -53,6 +53,24 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void integracaoNaoConfiguradaDeveResponder503() {
+        var response = handler.handleIntegracaoNaoConfigurada(new IntegracaoNaoConfiguradaException("sem app"), request);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(503);
+        assertThat(response.getBody().getDetail()).isEqualTo("sem app");
+    }
+
+    @Test
+    void erroDaMetaDeveResponder502SemVazarDetalhesDaMeta() {
+        var tokenRuim = handler.handleMetaApi(new br.com.sgsm.ia.marketing.meta.MetaApiException(400, 190, "Error validating access token"), request);
+        var outro = handler.handleMetaApi(new br.com.sgsm.ia.marketing.meta.MetaApiException(500, 2, "detalhe interno"), request);
+
+        assertThat(tokenRuim.getStatusCode().value()).isEqualTo(502);
+        assertThat(tokenRuim.getBody().getDetail()).contains("Reconecte");
+        assertThat(outro.getBody().getDetail()).doesNotContain("detalhe interno");
+    }
+
+    @Test
     void deveTratarOperacaoEmAndamentoComo409() {
         var response = handler.handleOperacaoEmAndamento(new OperacaoEmAndamentoException("sync em andamento"), request);
 

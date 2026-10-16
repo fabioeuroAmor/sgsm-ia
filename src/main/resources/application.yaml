@@ -29,6 +29,29 @@ crm:
   analitico:
     sync-interval-ms: 1800000
 
+# Tráfego pago (Meta Ads) — Plano_Desenvolvimento_Trafego_Pago_Meta_Ads_SGSM.docx.
+# Desligado por padrão: precisa de META_HABILITADO=true + app-id/app-secret do App Meta +
+# META_TOKEN_CRYPTO_KEY (AES-256 em Base64). Confirmar a versão vigente da Graph API ao criar o app.
+meta:
+  habilitado: ${META_HABILITADO:false}
+  app-id: ${META_APP_ID:}
+  app-secret: ${META_APP_SECRET:}
+  login-config-id: ${META_LOGIN_CONFIG_ID:}
+  graph-version: ${META_GRAPH_VERSION:v23.0}
+  graph-base-url: ${META_GRAPH_BASE_URL:https://graph.facebook.com}
+  dialog-base-url: ${META_DIALOG_BASE_URL:https://www.facebook.com}
+  # Endereço para onde a Meta devolve o navegador (passa pelo proxy /marketing/ do front em dev)
+  redirect-uri: ${META_REDIRECT_URI:http://localhost:3001/marketing/meta/callback}
+  # Tela do front que recebe o resultado da conexão
+  front-retorno-url: ${META_FRONT_RETORNO_URL:http://localhost:3001/trafego-pago}
+  token-crypto-key: ${META_TOKEN_CRYPTO_KEY:}
+  # A Meta revisa números passados (janela de atribuição): reprocessa os últimos N dias a cada sync
+  dias-reprocessamento: 28
+  # Para de sincronizar contas na rodada quando o uso da API passa deste percentual
+  limite-uso-percentual: 80
+  sync-intervalo-ms: ${META_SYNC_INTERVALO_MS:10800000}
+  sync-atraso-inicial-ms: ${META_SYNC_ATRASO_INICIAL_MS:300000}
+
 # Observabilidade: log estruturado (JSON, formato ECS) + tracing distribuido. O traceId/spanId
 # entra automaticamente no MDC (e portanto no log estruturado) e se propaga sozinho entre os
 # 4 servicos via header HTTP "traceparent" - nao precisa de codigo manual de correlacao.

@@ -3,6 +3,13 @@ package br.com.sgsm.ia.config;
 import br.com.sgsm.ia.controller.CrmController;
 import br.com.sgsm.ia.controller.IaController;
 import br.com.sgsm.ia.controller.WhatsAppController;
+import br.com.sgsm.ia.marketing.meta.MetaAcessoService;
+import br.com.sgsm.ia.marketing.meta.MetaAdsController;
+import br.com.sgsm.ia.marketing.meta.MetaContaService;
+import br.com.sgsm.ia.marketing.meta.MetaMetricasService;
+import br.com.sgsm.ia.marketing.meta.MetaOAuthService;
+import br.com.sgsm.ia.marketing.meta.MetaSyncService;
+import br.com.sgsm.ia.marketing.meta.MetaWebhookService;
 import br.com.sgsm.ia.security.EscopoAcessoService;
 import br.com.sgsm.ia.security.JwtService;
 import br.com.sgsm.ia.service.AssistenteMedicoService;
@@ -37,6 +44,7 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
@@ -54,7 +62,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * PACIENTE autocadastrado, lendo /crm e /ia).
  */
 @WebMvcTest(
-        controllers = {CrmController.class, IaController.class, WhatsAppController.class},
+        controllers = {CrmController.class, IaController.class, WhatsAppController.class, MetaAdsController.class},
         properties = "ia.whatsapp.service-key=" + SecurityConfigTest.CHAVE_SERVICO)
 @Import({SecurityConfig.class, SecurityConfigTest.JwtTestConfig.class})
 class SecurityConfigTest {
@@ -72,6 +80,11 @@ class SecurityConfigTest {
     @TestConfiguration
     static class JwtTestConfig {
         @Bean
+        java.time.Clock clock() {
+            return java.time.Clock.systemUTC();
+        }
+
+        @Bean
         JwtService jwtService() {
             return new JwtService(new JwtProperties(SEGREDO));
         }
@@ -88,6 +101,12 @@ class SecurityConfigTest {
     @MockitoBean private EtlSyncService etlSyncService;
     @MockitoBean private EscopoAcessoService escopoAcessoService;
     @MockitoBean private WhatsAppService whatsAppService;
+    @MockitoBean private MetaAcessoService metaAcessoService;
+    @MockitoBean private MetaOAuthService metaOAuthService;
+    @MockitoBean private MetaContaService metaContaService;
+    @MockitoBean private MetaSyncService metaSyncService;
+    @MockitoBean private MetaMetricasService metaMetricasService;
+    @MockitoBean private MetaWebhookService metaWebhookService;
 
     private static String token(String role) {
         return Jwts.builder()
@@ -133,7 +152,15 @@ class SecurityConfigTest {
             new Rota(HttpMethod.GET, "/ia/busca?q=cardiologia", Set.of(MEDICO, FUNCIONARIO, ADMIN, DEV)),
             new Rota(HttpMethod.GET, "/ia/paciente/" + PACIENTE_ID + "/resumo", Set.of(MEDICO, FUNCIONARIO, ADMIN, DEV)),
             new Rota(HttpMethod.GET, "/ia/kpis", Set.of(ADMIN, DEV)),
-            new Rota(HttpMethod.POST, "/ia/etl/sync", Set.of(DEV))
+            new Rota(HttpMethod.POST, "/ia/etl/sync", Set.of(DEV)),
+            // Tráfego pago (Meta Ads): só ADMIN_ESTABELECIMENTO e DESENVOLVEDOR (DM2)
+            new Rota(HttpMethod.POST, "/marketing/meta/estabelecimentos/" + PACIENTE_ID + "/conexao/iniciar", Set.of(ADMIN, DEV)),
+            new Rota(HttpMethod.GET, "/marketing/meta/estabelecimentos/" + PACIENTE_ID + "/conexao", Set.of(ADMIN, DEV)),
+            new Rota(HttpMethod.DELETE, "/marketing/meta/estabelecimentos/" + PACIENTE_ID + "/conexao", Set.of(ADMIN, DEV)),
+            new Rota(HttpMethod.GET, "/marketing/meta/estabelecimentos/" + PACIENTE_ID + "/contas-disponiveis", Set.of(ADMIN, DEV)),
+            new Rota(HttpMethod.PUT, "/marketing/meta/estabelecimentos/" + PACIENTE_ID + "/contas", Set.of(ADMIN, DEV)),
+            new Rota(HttpMethod.POST, "/marketing/meta/estabelecimentos/" + PACIENTE_ID + "/sincronizar", Set.of(ADMIN, DEV)),
+            new Rota(HttpMethod.GET, "/marketing/meta/estabelecimentos/" + PACIENTE_ID + "/metricas", Set.of(ADMIN, DEV))
     );
 
     static Stream<Arguments> matrizRotaPapel() {
@@ -165,6 +192,24 @@ class SecurityConfigTest {
         mockMvc.perform(req(rota.metodo(), rota.path()))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    }
+
+    // Quem chama estas é a Meta (ou o navegador voltando dela): sem JWT, mas também sem 401/403 —
+    // a validação é o state de uso único ou a assinatura do signed_request
+    @Test
+    void rotasChamadasPelaMetaNaoExigemJwt() throws Exception {
+        org.mockito.Mockito.when(metaOAuthService.callback(any(), any(), any())).thenReturn("http://localhost:3001/trafego-pago");
+
+        mockMvc.perform(request(HttpMethod.GET, "/marketing/meta/callback?code=c&state=s"))
+                .andExpect(status().isFound());
+        mockMvc.perform(request(HttpMethod.POST, "/marketing/meta/desautorizacao")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED).content("signed_request=x.y"))
+                .andExpect(status().isOk());
+        mockMvc.perform(request(HttpMethod.POST, "/marketing/meta/exclusao-dados")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED).content("signed_request=x.y"))
+                .andExpect(status().isOk());
+        mockMvc.perform(request(HttpMethod.GET, "/marketing/meta/exclusao-dados/abc"))
+                .andExpect(status().isOk());
     }
 
     @Test

@@ -33,17 +33,20 @@ public class SecurityConfig {
     private final StringRedisTemplate redis;
     private final int limiteChatPorMinuto;
     private final int limiteWhatsAppPorMinuto;
+    private final int limiteMetaPublicoPorMinuto;
 
     public SecurityConfig(JwtAuthFilter jwtAuthFilter,
                           @Value("${ia.whatsapp.service-key:}") String whatsAppServiceKey,
                           StringRedisTemplate redis,
                           @Value("${ia.rate-limit.chat-por-minuto:20}") int limiteChatPorMinuto,
-                          @Value("${ia.rate-limit.whatsapp-por-minuto:120}") int limiteWhatsAppPorMinuto) {
+                          @Value("${ia.rate-limit.whatsapp-por-minuto:120}") int limiteWhatsAppPorMinuto,
+                          @Value("${ia.rate-limit.meta-publico-por-minuto:60}") int limiteMetaPublicoPorMinuto) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.whatsAppServiceKey = whatsAppServiceKey;
         this.redis = redis;
         this.limiteChatPorMinuto = limiteChatPorMinuto;
         this.limiteWhatsAppPorMinuto = limiteWhatsAppPorMinuto;
+        this.limiteMetaPublicoPorMinuto = limiteMetaPublicoPorMinuto;
     }
 
     // Escopo fino (estabelecimento, posse do paciente) fica nos services via
@@ -64,6 +67,12 @@ public class SecurityConfig {
                         // Bot do WhatsApp: token do usuário da sessão (normalmente PACIENTE) ou o
                         // token de sistema; a chave de serviço é exigida pelo ServiceKeyFilter
                         .requestMatchers("/ia/whatsapp/**").authenticated()
+                        // Tráfego pago (Meta Ads): quem chama estas é a Meta ou o navegador voltando
+                        // dela — validação própria (state de uso único / signed_request) + rate limit
+                        .requestMatchers(HttpMethod.GET, "/marketing/meta/callback", "/marketing/meta/exclusao-dados/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/marketing/meta/desautorizacao", "/marketing/meta/exclusao-dados").permitAll()
+                        // Demais rotas de tráfego pago: só ADMIN_ESTABELECIMENTO e DESENVOLVEDOR (DM2)
+                        .requestMatchers("/marketing/**").hasAnyRole(ADMIN_ESTABELECIMENTO, DESENVOLVEDOR)
                         .requestMatchers("/ia/etl/**").hasRole(DESENVOLVEDOR)
                         .requestMatchers("/ia/kpis").hasAnyRole(ADMIN_ESTABELECIMENTO, DESENVOLVEDOR)
                         .requestMatchers("/crm/churn").hasAnyRole(FUNCIONARIO, ADMIN_ESTABELECIMENTO, DESENVOLVEDOR)
@@ -81,7 +90,7 @@ public class SecurityConfig {
                 .addFilterBefore(new ServiceKeyFilter(whatsAppServiceKey), JwtAuthFilter.class)
                 // Depois do JWT: o limite do chat é por usuário autenticado
                 .addFilterAfter(new RateLimitFilter(redis, limiteChatPorMinuto, limiteWhatsAppPorMinuto,
-                        Clock.systemUTC()), JwtAuthFilter.class)
+                        limiteMetaPublicoPorMinuto, Clock.systemUTC()), JwtAuthFilter.class)
                 .build();
     }
 

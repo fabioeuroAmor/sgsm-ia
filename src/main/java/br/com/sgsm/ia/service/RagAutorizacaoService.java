@@ -99,6 +99,8 @@ public class RagAutorizacaoService {
             case "AGENDAMENTO" -> agendamentoNoEscopo(referenciaId);
             case "REEMBOLSO" -> reembolsoNoEscopo(referenciaId);
             case "LEAD" -> leadNoEscopo(referenciaId);
+            // Tráfego pago (gasto da clínica): só o ADMIN da própria clínica (DM2 do plano Meta Ads)
+            case "MARKETING" -> contexto.isAdminEstabelecimento() && escopo.estabelecimentoPermitido(referenciaId);
             default -> false;
         };
     }

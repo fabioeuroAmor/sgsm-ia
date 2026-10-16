@@ -42,7 +42,7 @@ class RateLimitFilterTest {
 
     @BeforeEach
     void setUp() {
-        filtro = new RateLimitFilter(redis, 2, 3, Clock.fixed(AGORA, ZoneOffset.UTC));
+        filtro = new RateLimitFilter(redis, 2, 3, 1, Clock.fixed(AGORA, ZoneOffset.UTC));
     }
 
     @AfterEach
@@ -109,6 +109,21 @@ class RateLimitFilterTest {
         var response = new MockHttpServletResponse();
 
         filtro.doFilter(req("POST", "/ia/whatsapp/classificar"), response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(429);
+    }
+
+    @Test
+    void rotasPublicasDaMetaUsamContadorGlobalProprio() throws Exception {
+        assertThat(filtro.shouldNotFilter(req("GET", "/marketing/meta/callback"))).isFalse();
+        assertThat(filtro.shouldNotFilter(req("POST", "/marketing/meta/desautorizacao"))).isFalse();
+        assertThat(filtro.shouldNotFilter(req("GET", "/marketing/meta/exclusao-dados/abc"))).isFalse();
+        assertThat(filtro.shouldNotFilter(req("GET", "/marketing/meta/estabelecimentos/x/metricas"))).isTrue();
+        when(redis.opsForValue()).thenReturn(valores);
+        when(valores.increment("sgsm-ia:rate:meta-publico:" + JANELA)).thenReturn(2L);
+        var response = new MockHttpServletResponse();
+
+        filtro.doFilter(req("GET", "/marketing/meta/callback"), response, chain);
 
         assertThat(response.getStatus()).isEqualTo(429);
     }

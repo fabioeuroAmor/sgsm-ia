@@ -179,6 +179,23 @@ class RagAutorizacaoServiceTest {
                 .containsExactly("l2");
     }
 
+    // Resumo de tráfego pago (gasto da clínica): só o ADMIN da própria clínica (DM2 do plano Meta Ads)
+    @Test
+    void trafegoPagoSoParaOAdminDaPropriaClinica() {
+        when(contexto.isAdminEstabelecimento()).thenReturn(true);
+        when(escopo.estabelecimentoPermitido("clinica-1")).thenReturn(true);
+        when(escopo.estabelecimentoPermitido("clinica-2")).thenReturn(false);
+
+        assertThat(rag.podeVer("MARKETING", "clinica-1")).isTrue();
+        assertThat(rag.podeVer("MARKETING", "clinica-2")).isFalse();
+    }
+
+    @Test
+    void funcionarioNaoVeTrafegoPago() {
+        assertThat(rag.podeVer("MARKETING", "clinica-1")).isFalse();
+        verify(escopo, never()).estabelecimentoPermitido(anyString());
+    }
+
     @Test
     void tipoDesconhecidoOuSemMetadataEhDescartado() {
         var semMetadata = new EmbeddingMatch<>(0.9, "x", null, TextSegment.from("texto solto"));

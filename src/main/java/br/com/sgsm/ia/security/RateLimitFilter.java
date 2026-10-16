@@ -20,6 +20,8 @@ import java.time.Duration;
 //  - chat/resumo de paciente: por usuário autenticado
 //  - WhatsApp: global — os usuários não identificados chegam todos com o mesmo token de sistema
 //    do bot e a requisição não traz o número, então não há chave por usuário confiável
+//  - rotas públicas da Meta (callback OAuth, desautorização, exclusão de dados): global, porque
+//    não têm usuário autenticado
 // Redis indisponível = deixa passar (o rate limit não pode derrubar o serviço).
 public class RateLimitFilter extends OncePerRequestFilter {
 
@@ -31,21 +33,28 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final StringRedisTemplate redis;
     private final int limiteChatPorMinuto;
     private final int limiteWhatsAppPorMinuto;
+    private final int limiteMetaPublicoPorMinuto;
     private final Clock clock;
 
-    public RateLimitFilter(StringRedisTemplate redis, int limiteChatPorMinuto, int limiteWhatsAppPorMinuto, Clock clock) {
+    public RateLimitFilter(StringRedisTemplate redis, int limiteChatPorMinuto, int limiteWhatsAppPorMinuto,
+                           int limiteMetaPublicoPorMinuto, Clock clock) {
         this.redis = redis;
         this.limiteChatPorMinuto = limiteChatPorMinuto;
         this.limiteWhatsAppPorMinuto = limiteWhatsAppPorMinuto;
+        this.limiteMetaPublicoPorMinuto = limiteMetaPublicoPorMinuto;
         this.clock = clock;
     }
 
-    private enum Categoria { CHAT, WHATSAPP }
+    private enum Categoria { CHAT, WHATSAPP, META_PUBLICO }
 
     private static Categoria categoria(HttpServletRequest request) {
         String uri = request.getRequestURI();
         if ("POST".equals(request.getMethod()) && uri.equals("/ia/whatsapp/classificar")) {
             return Categoria.WHATSAPP;
+        }
+        if (uri.equals("/marketing/meta/callback") || uri.startsWith("/marketing/meta/exclusao-dados")
+                || uri.equals("/marketing/meta/desautorizacao")) {
+            return Categoria.META_PUBLICO;
         }
         if (("POST".equals(request.getMethod()) && uri.equals("/ia/chat"))
                 || ("GET".equals(request.getMethod()) && uri.matches("/ia/paciente/[^/]+/resumo"))) {
@@ -69,6 +78,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (categoria == Categoria.WHATSAPP) {
             chaveBase = PREFIXO + "whatsapp";
             limite = limiteWhatsAppPorMinuto;
+        } else if (categoria == Categoria.META_PUBLICO) {
+            chaveBase = PREFIXO + "meta-publico";
+            limite = limiteMetaPublicoPorMinuto;
         } else {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth == null) {
