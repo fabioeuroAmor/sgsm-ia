@@ -73,9 +73,12 @@ public class WhatsAppService {
             - Quando todos dados presentes E ação pode ser executada: requerConfirmacao=true, dadosFaltantes=[]
 
             REGRA DE IDs (IMPORTANTE):
-            - Se o CONTEXTO contém dados de médico mencionado pelo usuário, extraia o "referencia_id" do contexto e coloque em medicoId.
-            - Se o CONTEXTO contém um serviço médico relevante, coloque seu ID em servicoMedicoId.
-            - Se o CONTEXTO contém agendamento a cancelar, coloque seu ID em agendamentoId.
+            - Cada documento do CONTEXTO começa com [tipo=... referencia_id=...]: o referencia_id é o ID desse registro.
+            - Médico mencionado pelo usuário: use o referencia_id do documento tipo=MEDICO em medicoId.
+            - Serviço médico que o usuário quer agendar: use o referencia_id do documento tipo=SERVICO_MEDICO em servicoMedicoId.
+            - Agendamento a cancelar: use o referencia_id do documento tipo=AGENDAMENTO em agendamentoId.
+            - Nunca invente IDs nem copie IDs de outro tipo de documento.
+            - Nunca mostre IDs (referencia_id) na respostaUsuario: eles são só para os campos de entidades.
 
             REGRA DE AUTENTICAÇÃO (IMPORTANTE):
             - PERFIL DO USUÁRIO = "NÃO IDENTIFICADO" significa que o usuário ainda não confirmou sua identidade.
@@ -102,7 +105,7 @@ public class WhatsAppService {
         // 1. Busca semântica no Milvus — só catálogo público + agendamentos do próprio paciente
         List<EmbeddingMatch<TextSegment>> matches = ragAutorizacaoService.buscarParaWhatsApp(request.mensagem());
         String contexto = matches.stream()
-                .map(m -> m.embedded().text())
+                .map(WhatsAppService::documentoComReferencia)
                 .distinct()
                 .collect(Collectors.joining("\n---\n"));
         if (contexto.isBlank()) {
@@ -141,6 +144,19 @@ public class WhatsAppService {
                     + ", primeiro preciso confirmar sua identidade. Digite seu e-mail cadastrado.");
         }
 
+        // 6b. Reforço determinístico: AGENDAR só vai para confirmação com serviço, data e hora extraídos.
+        // O LLM às vezes marca requerConfirmacao sem o servicoMedicoId — o bot então pedia "Sim" ao
+        // paciente e o agendamento falhava no sgsm (rodada 8 do QA de conflito de agendamento)
+        // (sem perfil identificado vale a mensagem de identificação do passo 6, não esta)
+        if (resposta.getIntent() == IntentWhatsApp.AGENDAR && resposta.isRequerConfirmacao() && request.perfil() != null) {
+            List<String> faltando = camposDeAgendamentoFaltando(resposta.getEntidades());
+            if (!faltando.isEmpty()) {
+                resposta.setRequerConfirmacao(false);
+                resposta.setDadosFaltantes(faltando);
+                resposta.setRespostaUsuario(perguntaPeloQueFalta(faltando));
+            }
+        }
+
         // 7. Sanitiza só o texto de conversa (nunca as entidades estruturadas, ex.: cpf/email)
         if (resposta.getRespostaUsuario() != null) {
             var sanitizada = sanitizacaoGuardrail.validate(AiMessage.from(resposta.getRespostaUsuario()));
@@ -150,6 +166,34 @@ public class WhatsAppService {
         }
 
         return resposta;
+    }
+
+    // Prefixa o documento com tipo e referencia_id (vêm do metadado do Milvus): sem isso o LLM não tinha
+    // como preencher servicoMedicoId/medicoId e o agendamento pelo WhatsApp nunca chegava à confirmação
+    static String documentoComReferencia(EmbeddingMatch<TextSegment> m) {
+        var metadata = m.embedded().metadata();
+        String tipo = metadata == null ? null : metadata.getString("tipo");
+        String referencia = metadata == null ? null : metadata.getString("referencia_id");
+        if (tipo == null || referencia == null) {
+            return m.embedded().text();
+        }
+        return "[tipo=" + tipo + " referencia_id=" + referencia + "] " + m.embedded().text();
+    }
+
+    static List<String> camposDeAgendamentoFaltando(EntidadesWhatsApp e) {
+        List<String> faltando = new java.util.ArrayList<>();
+        if (e == null || e.getServicoMedicoId() == null || e.getServicoMedicoId().isBlank()) faltando.add("servicoMedicoId");
+        if (e == null || e.getData() == null || e.getData().isBlank()) faltando.add("data");
+        if (e == null || e.getHora() == null || e.getHora().isBlank()) faltando.add("hora");
+        return faltando;
+    }
+
+    static String perguntaPeloQueFalta(List<String> faltando) {
+        if (faltando.contains("servicoMedicoId")) {
+            return "Para agendar, preciso saber qual consulta ou serviço você deseja e com qual médico. "
+                    + "Pode me dizer o nome do serviço?";
+        }
+        return "Para agendar, me informe a data e o horário desejados (ex.: 21/10/2026 às 10:00).";
     }
 
     private WhatsAppClassificarResponse parseResposta(String texto, String mensagemOriginal) {

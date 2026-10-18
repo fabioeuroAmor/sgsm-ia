@@ -47,6 +47,51 @@ class WhatsAppServiceTest {
                 + "\"requerConfirmacao\":false,\"dadosFaltantes\":[]}";
     }
 
+    // Rodada 9 do QA: o contexto não trazia o ID dos documentos e o LLM nunca preenchia servicoMedicoId
+    @Test
+    void contextoLevaTipoEReferenciaIdDeCadaDocumentoParaOLlm() {
+        var servico = TextSegment.from("Serviço médico: QA Descartavel. Médico: Fabio.",
+                dev.langchain4j.data.document.Metadata.from(java.util.Map.of(
+                        "tipo", "SERVICO_MEDICO", "referencia_id", "0f4d2d1e-7a44-49d3-87af-a8c72aafcb82")));
+        var semMetadado = TextSegment.from("Documento antigo sem metadado");
+        when(ragAutorizacaoService.buscarParaWhatsApp(anyString())).thenReturn(List.of(
+                new EmbeddingMatch<>(0.9, "id1", null, servico),
+                new EmbeddingMatch<>(0.8, "id2", null, semMetadado)));
+        when(chatModel.generate(anyString())).thenReturn(jsonConversar());
+
+        service.classificar(new WhatsAppClassificarRequest("quero QA Descartavel", null, "PACIENTE", null));
+
+        var prompt = ArgumentCaptor.forClass(String.class);
+        verify(chatModel).generate(prompt.capture());
+        assertThat(prompt.getValue())
+                .contains("[tipo=SERVICO_MEDICO referencia_id=0f4d2d1e-7a44-49d3-87af-a8c72aafcb82] Serviço médico: QA Descartavel")
+                .contains("Documento antigo sem metadado")
+                .contains("Nunca mostre IDs");
+    }
+
+    // Rodada 8 do QA: o LLM marcou requerConfirmacao sem servicoMedicoId e o agendamento falhava no sgsm
+    @Test
+    void agendarSemServicoDataOuHoraNaoVaiParaConfirmacao() {
+        semDocumentosNoMilvus();
+        when(chatModel.generate(anyString())).thenReturn(
+                "{\"intent\":\"AGENDAR\",\"entidades\":{\"medicoId\":\"med-1\",\"data\":\"21/10/2026\",\"hora\":\"10:00\"},"
+                        + "\"respostaUsuario\":\"Confirma?\",\"requerConfirmacao\":true,\"dadosFaltantes\":[]}",
+                "{\"intent\":\"AGENDAR\",\"entidades\":{\"servicoMedicoId\":\"serv-1\",\"data\":\" \"},"
+                        + "\"respostaUsuario\":\"Confirma?\",\"requerConfirmacao\":true,\"dadosFaltantes\":[]}");
+
+        var semServico = service.classificar(new WhatsAppClassificarRequest("quero agendar dia 21 às 10h", null, "PACIENTE", null));
+        assertThat(semServico.isRequerConfirmacao()).isFalse();
+        assertThat(semServico.getDadosFaltantes()).containsExactly("servicoMedicoId");
+        assertThat(semServico.getRespostaUsuario()).contains("qual consulta ou serviço");
+
+        var semDataHora = service.classificar(new WhatsAppClassificarRequest("quero a consulta X", null, "PACIENTE", null));
+        assertThat(semDataHora.isRequerConfirmacao()).isFalse();
+        assertThat(semDataHora.getDadosFaltantes()).containsExactly("data", "hora");
+        assertThat(semDataHora.getRespostaUsuario()).contains("data e o horário");
+
+        assertThat(WhatsAppService.camposDeAgendamentoFaltando(null)).containsExactly("servicoMedicoId", "data", "hora");
+    }
+
     @Test
     void deveClassificarComSucessoDeduplicandoContextoDoMilvus() {
         when(ragAutorizacaoService.buscarParaWhatsApp(anyString())).thenReturn(List.of(
@@ -54,7 +99,8 @@ class WhatsAppServiceTest {
                 new EmbeddingMatch<>(0.8, "id2", null, TextSegment.from("Dr. João - Cardiologia"))
         ));
         when(chatModel.generate(anyString())).thenReturn(
-                "{\"intent\":\"AGENDAR\",\"entidades\":{\"especialidade\":\"Cardiologia\",\"medicoId\":\"med-1\"},"
+                "{\"intent\":\"AGENDAR\",\"entidades\":{\"especialidade\":\"Cardiologia\",\"medicoId\":\"med-1\","
+                        + "\"servicoMedicoId\":\"serv-1\",\"data\":\"21/10/2026\",\"hora\":\"10:00\"},"
                         + "\"respostaUsuario\":\"Vou agendar com o Dr. João.\",\"requerConfirmacao\":true,\"dadosFaltantes\":[]}");
 
         var request = new WhatsAppClassificarRequest("Quero marcar com o Dr. João", null, "PACIENTE", null);
@@ -183,7 +229,8 @@ class WhatsAppServiceTest {
     void naoDeveSobrescreverRespostaQuandoAgendarComPerfilIdentificado() {
         semDocumentosNoMilvus();
         when(chatModel.generate(anyString())).thenReturn(
-                "{\"intent\":\"AGENDAR\",\"entidades\":{},\"respostaUsuario\":\"Vou agendar sua consulta.\","
+                "{\"intent\":\"AGENDAR\",\"entidades\":{\"servicoMedicoId\":\"serv-1\",\"data\":\"21/10/2026\",\"hora\":\"10:00\"},"
+                        + "\"respostaUsuario\":\"Vou agendar sua consulta.\","
                         + "\"requerConfirmacao\":true,\"dadosFaltantes\":[]}");
 
         var resposta = service.classificar(new WhatsAppClassificarRequest("quero marcar uma consulta", null, "PACIENTE", null));
