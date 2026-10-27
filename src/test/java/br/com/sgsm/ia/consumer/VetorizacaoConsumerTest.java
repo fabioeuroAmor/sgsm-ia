@@ -35,6 +35,8 @@ class VetorizacaoConsumerTest {
     private DocumentoBuilder documentoBuilder;
     @Mock
     private MilvusIndexService milvusIndexService;
+    @Mock
+    private br.com.sgsm.ia.service.EstabelecimentoDocumentoService estabelecimentoDocumentoService;
 
     private VetorizacaoConsumer consumer;
 
@@ -42,7 +44,7 @@ class VetorizacaoConsumerTest {
     void setUp() {
         IaProperties props = new IaProperties("openai", 10,
                 new IaProperties.RedisStreamProperties("sgsm:events:vetorizacao", "sgsm-ia-group", "sgsm-ia-consumer-1"));
-        consumer = new VetorizacaoConsumer(redis, documentoBuilder, milvusIndexService, props);
+        consumer = new VetorizacaoConsumer(redis, documentoBuilder, milvusIndexService, props, estabelecimentoDocumentoService);
         lenient().when(redis.opsForStream()).thenReturn(streamOps);
     }
 
@@ -111,6 +113,27 @@ class VetorizacaoConsumerTest {
 
         verify(milvusIndexService).upsert("PACIENTE", "id-1", "texto do paciente");
         verify(streamOps).acknowledge("sgsm:events:vetorizacao", "sgsm-ia-group", RecordId.of("1-1"));
+    }
+
+    // WhatsApp por clínica: as etiquetas dos serviços vêm das clínicas do médico — reindexa junto
+    @Test
+    void eventoDeMedicoReindexaTambemOsServicosDele() {
+        MapRecord<String, Object, Object> mensagem = MapRecord
+                .create("sgsm:events:vetorizacao", valores("MEDICO", "med-1"))
+                .withId(RecordId.of("1-9"));
+        when(streamOps.read(any(Consumer.class), any(StreamReadOptions.class), any(StreamOffset.class)))
+                .thenReturn(List.of(mensagem));
+        when(documentoBuilder.construir("MEDICO", "med-1")).thenReturn("texto do médico");
+        when(estabelecimentoDocumentoService.servicosDoMedico("med-1")).thenReturn(List.of("s1", "s2"));
+        when(documentoBuilder.construir("SERVICO_MEDICO", "s1")).thenReturn("serviço 1");
+        when(documentoBuilder.construir("SERVICO_MEDICO", "s2")).thenThrow(new RuntimeException("falha"));
+
+        consumer.processar();
+
+        verify(milvusIndexService).upsert("MEDICO", "med-1", "texto do médico");
+        verify(milvusIndexService).upsert("SERVICO_MEDICO", "s1", "serviço 1");
+        // falha num serviço não impede o ACK do evento do médico
+        verify(streamOps).acknowledge("sgsm:events:vetorizacao", "sgsm-ia-group", RecordId.of("1-9"));
     }
 
     @Test

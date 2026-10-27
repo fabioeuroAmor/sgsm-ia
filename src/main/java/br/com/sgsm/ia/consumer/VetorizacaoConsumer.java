@@ -2,6 +2,7 @@ package br.com.sgsm.ia.consumer;
 
 import br.com.sgsm.ia.config.IaProperties;
 import br.com.sgsm.ia.service.DocumentoBuilder;
+import br.com.sgsm.ia.service.EstabelecimentoDocumentoService;
 import br.com.sgsm.ia.service.MilvusIndexService;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -24,15 +25,31 @@ public class VetorizacaoConsumer {
     private final DocumentoBuilder documentoBuilder;
     private final MilvusIndexService milvusIndexService;
     private final IaProperties iaProps;
+    private final EstabelecimentoDocumentoService estabelecimentoDocumentoService;
 
     public VetorizacaoConsumer(StringRedisTemplate redis,
                                DocumentoBuilder documentoBuilder,
                                MilvusIndexService milvusIndexService,
-                               IaProperties iaProps) {
+                               IaProperties iaProps,
+                               EstabelecimentoDocumentoService estabelecimentoDocumentoService) {
         this.redis = redis;
         this.documentoBuilder = documentoBuilder;
         this.milvusIndexService = milvusIndexService;
         this.iaProps = iaProps;
+        this.estabelecimentoDocumentoService = estabelecimentoDocumentoService;
+    }
+
+    // As etiquetas de clínica dos serviços vêm das clínicas do médico (WhatsApp por clínica): quando o
+    // médico muda de clínica, os serviços dele são reindexados junto. Falha num serviço não derruba o
+    // evento do médico (o ETL completo corrige depois).
+    private void reindexarServicosDoMedico(String medicoId) {
+        for (String servicoId : estabelecimentoDocumentoService.servicosDoMedico(medicoId)) {
+            try {
+                milvusIndexService.upsert("SERVICO_MEDICO", servicoId, documentoBuilder.construir("SERVICO_MEDICO", servicoId));
+            } catch (Exception e) {
+                log.warn("Falha ao reindexar o serviço {} do médico {}: {}", servicoId, medicoId, e.getMessage());
+            }
+        }
     }
 
     @PostConstruct
@@ -76,6 +93,9 @@ public class VetorizacaoConsumer {
                     } else {
                         String texto = documentoBuilder.construir(tipo, id);
                         milvusIndexService.upsert(tipo, id, texto);
+                        if ("MEDICO".equals(tipo)) {
+                            reindexarServicosDoMedico(id);
+                        }
                     }
                     redis.opsForStream().acknowledge(streamKey, group, msg.getId());
                     log.info("Evento processado e ACK: tipo={} id={} operacao={}", tipo, id, operacao);

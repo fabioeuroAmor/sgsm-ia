@@ -28,11 +28,38 @@ class EstabelecimentoDocumentoServiceTest {
         service = new EstabelecimentoDocumentoService(jdbc);
     }
 
+    // Catálogo: PUBLICO + as clínicas em que é oferecido (WhatsApp de cada clínica filtra por elas)
     @ParameterizedTest
-    @ValueSource(strings = {"MEDICO", "ESTABELECIMENTO", "SERVICO_MEDICO", "medico"})
-    void catalogoEhPublicoSemConsultarOBanco(String tipo) {
-        assertThat(service.tags(tipo, "x")).containsExactly("PUBLICO");
-        verifyNoInteractions(jdbc);
+    @ValueSource(strings = {"MEDICO", "medico"})
+    void medicoEhPublicoEDasClinicasDele(String tipo) {
+        when(jdbc.queryForList(contains("medico_estabelecimento WHERE medico_id"), eq(String.class), eq("m-1")))
+                .thenReturn(List.of("clinica-a", "clinica-b"));
+
+        assertThat(service.tags(tipo, "m-1")).containsExactly("PUBLICO", "clinica-a", "clinica-b");
+    }
+
+    @Test
+    void servicoEhPublicoEDasClinicasDoMedicoEEstabelecimentoDeleMesmo() {
+        when(jdbc.queryForList(contains("sgsm.servico_medico s"), eq(String.class), eq("s-1")))
+                .thenReturn(List.of("clinica-a"));
+
+        assertThat(service.tags("SERVICO_MEDICO", "s-1")).containsExactly("PUBLICO", "clinica-a");
+        assertThat(service.tags("ESTABELECIMENTO", "clinica-a")).containsExactly("PUBLICO", "clinica-a");
+    }
+
+    @Test
+    void medicoSemClinicaContinuaPublico() {
+        when(jdbc.queryForList(anyString(), eq(String.class), eq("m-2"))).thenReturn(List.of());
+
+        assertThat(service.tags("MEDICO", "m-2")).containsExactly("PUBLICO");
+    }
+
+    @Test
+    void servicosAtivosDoMedico() {
+        when(jdbc.queryForList(contains("FROM sgsm.servico_medico WHERE medico_id"), eq(String.class), eq("m-1")))
+                .thenReturn(List.of("s1"));
+
+        assertThat(service.servicosDoMedico("m-1")).containsExactly("s1");
     }
 
     @Test

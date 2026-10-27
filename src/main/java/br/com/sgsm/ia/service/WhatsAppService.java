@@ -80,6 +80,11 @@ public class WhatsAppService {
             - Nunca invente IDs nem copie IDs de outro tipo de documento.
             - Nunca mostre IDs (referencia_id) na respostaUsuario: eles são só para os campos de entidades.
 
+            REGRA DE FIDELIDADE (IMPORTANTE):
+            - Cite apenas médicos, serviços, exames, preços e horários que aparecem no CONTEXTO DO SISTEMA.
+            - Nunca complete com serviços "comuns" de clínica (consultas, exames de imagem, laboratório etc.) que não estejam no CONTEXTO.
+            - Se o CONTEXTO não trouxer o que foi perguntado, diga que não encontrou essa informação cadastrada e ofereça ajuda com outra coisa.
+
             REGRA DE AUTENTICAÇÃO (IMPORTANTE):
             - PERFIL DO USUÁRIO = "NÃO IDENTIFICADO" significa que o usuário ainda não confirmou sua identidade.
             - Classifique a intenção real (AGENDAR, CANCELAR, etc.) mesmo com PERFIL "NÃO IDENTIFICADO". NUNCA troque a intenção para AUTENTICAR só por causa disso — a verificação de identidade é tratada automaticamente pelo sistema depois da classificação.
@@ -103,7 +108,9 @@ public class WhatsAppService {
 
     public WhatsAppClassificarResponse classificar(WhatsAppClassificarRequest request) {
         // 1. Busca semântica no Milvus — só catálogo público + agendamentos do próprio paciente
-        List<EmbeddingMatch<TextSegment>> matches = ragAutorizacaoService.buscarParaWhatsApp(request.mensagem());
+        List<EmbeddingMatch<TextSegment>> matches = request.estabelecimentoId() == null
+                ? ragAutorizacaoService.buscarParaWhatsApp(request.mensagem())
+                : ragAutorizacaoService.buscarParaWhatsApp(request.mensagem(), request.estabelecimentoId());
         String contexto = matches.stream()
                 .map(WhatsAppService::documentoComReferencia)
                 .distinct()
@@ -123,6 +130,8 @@ public class WhatsAppService {
         String prompt = SYSTEM_PROMPT
                 + "\n\nCONTEXTO DO SISTEMA:\n" + contexto
                 + "\n\nHISTÓRICO DA CONVERSA:\n" + historico
+                + clinicaDoAtendimento(request)
+                + semServicosNoContexto(matches)
                 + "\n\nPERFIL DO USUÁRIO: " + (request.perfil() != null ? request.perfil() : "NÃO IDENTIFICADO")
                 + "\n\nCONFIRMAÇÃO PENDENTE: " + (request.confirmacaoPendente() != null ? request.confirmacaoPendente() : "nenhuma")
                 + "\n\nMENSAGEM DO USUÁRIO: " + request.mensagem();
@@ -178,6 +187,27 @@ public class WhatsAppService {
             return m.embedded().text();
         }
         return "[tipo=" + tipo + " referencia_id=" + referencia + "] " + m.embedded().text();
+    }
+
+    // WhatsApp de uma clínica: o atendimento é só dela (o contexto já vem filtrado pela clínica)
+    static String clinicaDoAtendimento(WhatsAppClassificarRequest request) {
+        if (request.estabelecimentoId() == null) {
+            return "";
+        }
+        String nome = request.estabelecimentoNome() != null ? request.estabelecimentoNome() : "esta clínica";
+        return "\n\nCLÍNICA DESTE ATENDIMENTO: " + nome
+                + " — você é o assistente dela. Ofereça apenas médicos, serviços e horários desta clínica; "
+                + "se pedirem outra clínica, explique que este número atende só " + nome + ".";
+    }
+
+    // QA WA-B06: no número de uma clínica sem serviço ativo, o LLM inventava "consultas, exames de imagem…".
+    // Aviso explícito quando nenhum serviço veio do Milvus (a regra de fidelidade sozinha não bastou)
+    static String semServicosNoContexto(List<EmbeddingMatch<TextSegment>> matches) {
+        boolean temServico = matches.stream().anyMatch(m -> m.embedded().metadata() != null
+                && "SERVICO_MEDICO".equals(m.embedded().metadata().getString("tipo")));
+        return temServico ? ""
+                : "\n\nSERVIÇOS NO CONTEXTO: nenhum. Não cite nenhum serviço, exame ou procedimento; se perguntarem, "
+                        + "diga que não encontrou serviços cadastrados e que a equipe da clínica pode informar.";
     }
 
     static List<String> camposDeAgendamentoFaltando(EntidadesWhatsApp e) {

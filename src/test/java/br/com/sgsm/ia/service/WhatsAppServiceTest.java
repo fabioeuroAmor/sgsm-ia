@@ -19,6 +19,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -47,6 +49,23 @@ class WhatsAppServiceTest {
                 + "\"requerConfirmacao\":false,\"dadosFaltantes\":[]}";
     }
 
+    // WhatsApp por clínica: busca só no que a clínica oferece e o prompt diz de qual clínica é o número
+    @Test
+    void numeroDaClinicaBuscaSoNelaEApresentaAClinicaNoPrompt() {
+        when(ragAutorizacaoService.buscarParaWhatsApp(anyString(), eq("clinica-a"))).thenReturn(List.of());
+        when(chatModel.generate(anyString())).thenReturn(jsonConversar());
+
+        service.classificar(new WhatsAppClassificarRequest("oi", null, "PACIENTE", null, "clinica-a", "Clinica São Lucas"));
+
+        var prompt = ArgumentCaptor.forClass(String.class);
+        verify(chatModel).generate(prompt.capture());
+        assertThat(prompt.getValue()).contains("CLÍNICA DESTE ATENDIMENTO: Clinica São Lucas")
+                .contains("atende só Clinica São Lucas");
+        verify(ragAutorizacaoService, never()).buscarParaWhatsApp(anyString());
+        assertThat(WhatsAppService.clinicaDoAtendimento(
+                new WhatsAppClassificarRequest("oi", null, null, null, "c", null))).contains("esta clínica");
+    }
+
     // Rodada 9 do QA: o contexto não trazia o ID dos documentos e o LLM nunca preenchia servicoMedicoId
     @Test
     void contextoLevaTipoEReferenciaIdDeCadaDocumentoParaOLlm() {
@@ -66,7 +85,26 @@ class WhatsAppServiceTest {
         assertThat(prompt.getValue())
                 .contains("[tipo=SERVICO_MEDICO referencia_id=0f4d2d1e-7a44-49d3-87af-a8c72aafcb82] Serviço médico: QA Descartavel")
                 .contains("Documento antigo sem metadado")
-                .contains("Nunca mostre IDs");
+                .contains("Nunca mostre IDs")
+                .doesNotContain("SERVIÇOS NO CONTEXTO: nenhum");
+    }
+
+    // QA WA-B06: clínica sem serviço ativo — o LLM não pode completar com serviços "comuns"
+    @Test
+    void semServicoNoContextoOPromptProibeInventarServicos() {
+        var medico = TextSegment.from("Médico: Dr. Strix.",
+                dev.langchain4j.data.document.Metadata.from(java.util.Map.of("tipo", "MEDICO", "referencia_id", "m1")));
+        when(ragAutorizacaoService.buscarParaWhatsApp(anyString(), eq("clinica-b")))
+                .thenReturn(List.of(new EmbeddingMatch<>(0.9, "id1", null, medico)));
+        when(chatModel.generate(anyString())).thenReturn(jsonConversar());
+
+        service.classificar(new WhatsAppClassificarRequest("quais serviços vocês oferecem?", null, null, null,
+                "clinica-b", "Strix"));
+
+        var prompt = ArgumentCaptor.forClass(String.class);
+        verify(chatModel).generate(prompt.capture());
+        assertThat(prompt.getValue()).contains("SERVIÇOS NO CONTEXTO: nenhum")
+                .contains("REGRA DE FIDELIDADE");
     }
 
     // Rodada 8 do QA: o LLM marcou requerConfirmacao sem servicoMedicoId e o agendamento falhava no sgsm

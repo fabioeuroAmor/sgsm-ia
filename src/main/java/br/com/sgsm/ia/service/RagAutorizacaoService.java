@@ -82,6 +82,44 @@ public class RagAutorizacaoService {
                 this::podeVerNoWhatsApp);
     }
 
+    private static final String MEDICO_DA_CLINICA =
+            "SELECT EXISTS (SELECT 1 FROM sgsm.medico_estabelecimento "
+            + "WHERE medico_id = ?::uuid AND estabelecimento_id = ?::uuid AND ativo = true)";
+    private static final String SERVICO_DA_CLINICA =
+            "SELECT EXISTS (SELECT 1 FROM sgsm.servico_medico s "
+            + "JOIN sgsm.medico_estabelecimento me ON me.medico_id = s.medico_id AND me.ativo = true "
+            + "WHERE s.id = ?::uuid AND me.estabelecimento_id = ?::uuid)";
+    private static final String AGENDAMENTO_DA_CLINICA =
+            "SELECT EXISTS (SELECT 1 FROM sgsm.agendamento a "
+            + "LEFT JOIN sgsm.medico_estabelecimento me ON me.medico_id = a.medico_id AND me.ativo = true "
+            + "WHERE a.id = ?::uuid AND (a.estabelecimento_id = ?::uuid "
+            + "OR (a.estabelecimento_id IS NULL AND me.estabelecimento_id = ?::uuid)))";
+
+    // WhatsApp de uma clínica: só o que essa clínica oferece. A etiqueta do Milvus pré-filtra e o
+    // vínculo no banco decide (etiqueta desatualizada nunca mostra médico de outra clínica)
+    public List<EmbeddingMatch<TextSegment>> buscarParaWhatsApp(String pergunta, String estabelecimentoId) {
+        if (estabelecimentoId == null || estabelecimentoId.isBlank()) {
+            return buscarParaWhatsApp(pergunta);
+        }
+        Filter filtro = MetadataFilterBuilder.metadataKey("tipo")
+                .isIn("MEDICO", "ESTABELECIMENTO", "SERVICO_MEDICO", "AGENDAMENTO")
+                .and(MetadataFilterBuilder.metadataKey(EstabelecimentoDocumentoService.CHAVE_METADATA)
+                        .isEqualTo(estabelecimentoId));
+        return filtrar(milvusIndexService.buscar(pergunta, filtro, iaProps.topK() * FATOR_OVERFETCH),
+                (tipo, ref) -> podeVerNoWhatsApp(tipo, ref) && daClinica(tipo, ref, estabelecimentoId));
+    }
+
+    boolean daClinica(String tipo, String referenciaId, String estabelecimentoId) {
+        return switch (tipo) {
+            case "ESTABELECIMENTO" -> estabelecimentoId.equals(referenciaId);
+            case "MEDICO" -> escopo.existe(MEDICO_DA_CLINICA, referenciaId, estabelecimentoId);
+            case "SERVICO_MEDICO" -> escopo.existe(SERVICO_DA_CLINICA, referenciaId, estabelecimentoId);
+            // agendamento do próprio paciente (já validado por podeVerNoWhatsApp) desta clínica
+            case "AGENDAMENTO" -> escopo.existe(AGENDAMENTO_DA_CLINICA, referenciaId, estabelecimentoId, estabelecimentoId);
+            default -> false;
+        };
+    }
+
     boolean podeVer(String tipo, String referenciaId) {
         if (contexto.isDesenvolvedor()) {
             return true;
@@ -146,11 +184,16 @@ public class RagAutorizacaoService {
         boolean permite(String tipo, String referenciaId);
     }
 
+    // Um documento pode ter vários vetores (um por etiqueta de clínica): fica só o primeiro de cada
+    // (tipo, referencia_id), o mais relevante, antes de cortar no top-K
     private List<EmbeddingMatch<TextSegment>> filtrar(List<EmbeddingMatch<TextSegment>> matches, Regra regra) {
+        var vistos = new java.util.HashSet<String>();
         return matches.stream()
                 .filter(m -> m.embedded() != null && regra.permite(
                         m.embedded().metadata().getString("tipo"),
                         m.embedded().metadata().getString("referencia_id")))
+                .filter(m -> vistos.add(m.embedded().metadata().getString("tipo") + ":"
+                        + m.embedded().metadata().getString("referencia_id")))
                 .limit(iaProps.topK())
                 .toList();
     }

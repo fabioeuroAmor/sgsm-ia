@@ -245,6 +245,59 @@ class RagAutorizacaoServiceTest {
                 .containsExactly("meu", "m1");
     }
 
+    // ── WhatsApp de uma clínica ───────────────────────────────────────────────
+
+    private static EmbeddingMatch<TextSegment> docDaClinica(String tipo, String referenciaId, String clinica) {
+        return new EmbeddingMatch<>(0.9, tipo + referenciaId + clinica, null,
+                TextSegment.from(tipo + " " + referenciaId, Metadata.from(Map.of("tipo", tipo, "referencia_id", referenciaId,
+                        "estabelecimento_id", clinica))));
+    }
+
+    @Test
+    void whatsAppDaClinicaFiltraPelaClinicaNoMilvusEConfirmaNoBanco() {
+        when(milvusIndexService.buscar(anyString(), any(Filter.class), anyInt())).thenReturn(List.of(
+                docDaClinica("MEDICO", "m1", "clinica-a"),
+                docDaClinica("MEDICO", "m1", "clinica-a"),          // outro vetor do mesmo médico: deduplicado
+                docDaClinica("SERVICO_MEDICO", "s-velho", "clinica-a"), // etiqueta desatualizada: o banco nega
+                docDaClinica("ESTABELECIMENTO", "clinica-a", "clinica-a"),
+                docDaClinica("ESTABELECIMENTO", "clinica-b", "clinica-a")));
+        when(escopo.existe(contains("medico_estabelecimento"), eq("m1"), eq("clinica-a"))).thenReturn(true);
+        when(escopo.existe(contains("sgsm.servico_medico s"), eq("s-velho"), eq("clinica-a"))).thenReturn(false);
+
+        var resultado = rag.buscarParaWhatsApp("quero marcar", "clinica-a");
+
+        assertThat(resultado).extracting(m -> m.embedded().metadata().getString("referencia_id"))
+                .containsExactly("m1", "clinica-a");
+        Filter filtro = filtroUsadoNaBusca();
+        assertThat(aceita(filtro, "MEDICO", "clinica-a")).isTrue();
+        assertThat(aceita(filtro, "MEDICO", "clinica-b")).isFalse();
+        assertThat(aceita(filtro, "MEDICO", "PUBLICO")).isFalse();
+    }
+
+    @Test
+    void whatsAppDaClinicaSoMostraAgendamentoDoPacienteNaQuelaClinica() {
+        when(contexto.isPaciente()).thenReturn(true);
+        when(contexto.getReferenciaIdStr()).thenReturn("paciente-1");
+        when(milvusIndexService.buscar(anyString(), any(Filter.class), anyInt())).thenReturn(List.of(
+                docDaClinica("AGENDAMENTO", "aqui", "clinica-a"), docDaClinica("AGENDAMENTO", "la", "clinica-a")));
+        when(escopo.existe(contains("paciente_id = ?"), any(), eq("paciente-1"))).thenReturn(true);
+        when(escopo.existe(contains("FROM sgsm.agendamento a"), eq("aqui"), eq("clinica-a"), eq("clinica-a"))).thenReturn(true);
+        when(escopo.existe(contains("FROM sgsm.agendamento a"), eq("la"), eq("clinica-a"), eq("clinica-a"))).thenReturn(false);
+
+        assertThat(rag.buscarParaWhatsApp("cancelar", "clinica-a"))
+                .extracting(m -> m.embedded().metadata().getString("referencia_id")).containsExactly("aqui");
+        assertThat(rag.daClinica("LEAD", "x", "clinica-a")).isFalse();
+    }
+
+    @Test
+    void whatsAppSemClinicaContinuaNoCanalGeral() {
+        when(milvusIndexService.buscar(anyString(), any(Filter.class), anyInt())).thenReturn(List.of());
+
+        rag.buscarParaWhatsApp("oi", " ");
+
+        assertThat(aceita(filtroUsadoNaBusca(), "MEDICO", "PUBLICO")).isTrue();
+    }
+
     // Token de sistema do bot é DESENVOLVEDOR, mas no WhatsApp isso não dá acesso a agendamentos
     @Test
     void whatsAppComTokenDeSistemaSoVeCatalogo() {
